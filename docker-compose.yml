@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   rag-app:
     build:
@@ -18,3 +16,4 @@ services:
     volumes:
       - ./data:/app/data
     restart: unless-stopped
+    command: bash -c "python -m app.main"

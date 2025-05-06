@@ -1,0 +1,187 @@
+{
+	"info": {
+		"_postman_id": "f3d68a2e-3a97-4983-b9c7-d5e01d7c29f5",
+		"name": "RAG Documentation Assistant API",
+		"description": "A collection for interacting with the Azure-Powered RAG Documentation Assistant API",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Welcome Page",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						""
+					]
+				},
+				"description": "Get welcome page with endpoint descriptions"
+			},
+			"response": []
+		},
+		{
+			"name": "Crawl Documentation Site",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"url\": \"https://docs.python.org/3/tutorial/introduction.html\",\n    \"max_pages\": 5\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/crawl",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"crawl"
+					]
+				},
+				"description": "Crawl a documentation site and index its content for RAG"
+			},
+			"response": []
+		},
+		{
+			"name": "Get Job Status",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/job-status/{{job_id}}",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"job-status",
+						"{{job_id}}"
+					]
+				},
+				"description": "Check the status of a background crawl job"
+			},
+			"response": []
+		},
+		{
+			"name": "Ask Question",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"question\": \"What are lists in Python?\",\n    \"num_results\": 3\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/question",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"question"
+					]
+				},
+				"description": "Ask a question and get an answer based on indexed documentation"
+			},
+			"response": []
+		},
+		{
+			"name": "Add Q&A Pair",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"question\": \"What is the best way to learn Python?\",\n    \"answer\": \"The best way to learn Python is through practice and working on real projects.\",\n    \"sources\": [\"https://example.com/python-learning\"]\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/add-qa",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"add-qa"
+					]
+				},
+				"description": "Add a custom Q&A pair to improve the system"
+			},
+			"response": []
+		},
+		{
+			"name": "Get Q&A History",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/history?limit=20",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"history"
+					],
+					"query": [
+						{
+							"key": "limit",
+							"value": "20",
+							"description": "Number of history items to retrieve (default: 20, max: 100)"
+						}
+					]
+				},
+				"description": "Get recent Q&A history"
+			},
+			"response": []
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:8000",
+			"type": "string",
+			"description": "The base URL for the RAG API"
+		},
+		{
+			"key": "job_id",
+			"value": "crawl_1",
+			"type": "string",
+			"description": "A job ID obtained from the crawl endpoint"
+		}
+	]
+}

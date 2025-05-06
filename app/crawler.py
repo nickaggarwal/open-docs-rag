@@ -78,9 +78,33 @@ class WebCrawler:
                     for script in soup(["script", "style"]):
                         script.extract()
                     
-                    # Extract text content
-                    text = soup.get_text(separator=' ')
-                    text = ' '.join(text.split())  # Normalize whitespace
+                    # Extract main content areas
+                    main_content = soup.find_all(['main', 'article', 'div', 'section'], class_=['content', 'documentation', 'main', 'article', 'docs-content'])
+                    content_html = ""
+                    
+                    # If specific content areas found, use them
+                    if main_content:
+                        for content in main_content:
+                            content_html += str(content)
+                        content_soup = BeautifulSoup(content_html, 'html.parser')
+                        text = content_soup.get_text(separator='\n')
+                    else:
+                        # If no specific content areas found, use the whole page
+                        text = soup.get_text(separator='\n')
+                    
+                    # Preserve code blocks
+                    code_blocks = []
+                    for code in soup.find_all(['pre', 'code']):
+                        code_text = code.get_text()
+                        if len(code_text.strip()) > 0:
+                            code_blocks.append(f"\n```\n{code_text}\n```\n")
+                    
+                    # Append code blocks to the text
+                    if code_blocks:
+                        text += "\n\nCode Examples:\n" + "\n".join(code_blocks)
+                    
+                    # Normalize whitespace while preserving line breaks
+                    text = '\n'.join([' '.join(line.split()) for line in text.split('\n') if line.strip()])
                     
                     # Skip pages with too little content
                     if len(text) < 50:

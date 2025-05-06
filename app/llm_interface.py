@@ -124,15 +124,24 @@ Answer the question based on the context provided. If the answer is not containe
             # Log API request details
             logger.info(f"Using deployment: {self.azure_deployment}, API version: {self.azure_api_version}")
             
+            # Prepare request payload
+            messages = [
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": prompt}
+            ]
+            
+            # Log request payload
+            logger.info(f"Request payload to Azure OpenAI: messages={messages}, max_completion_tokens=2500")
+            
             # Make API call to Azure OpenAI
             response = self.client.chat.completions.create(
                 model=self.azure_deployment,  # This is ignored for Azure but required
-                messages=[
-                    {"role": "system", "content": "You are a helpful assistant."},
-                    {"role": "user", "content": prompt}
-                ],
-                max_completion_tokens=800  # Only parameter supported by the model
+                messages=messages,
+                max_completion_tokens=2500  # Increased from 800 to 2500 for longer responses
             )
+            
+            # Log response from Azure OpenAI
+            logger.info(f"Azure OpenAI response: id={response.id}, model={response.model}, finish_reason={response.choices[0].finish_reason}, usage={response.usage}")
             
             answer = response.choices[0].message.content
             

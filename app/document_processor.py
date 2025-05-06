@@ -9,7 +9,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class DocumentProcessor:
-    def __init__(self, chunk_size: int = 1000, chunk_overlap: int = 200, max_process_time: int = 120):
+    def __init__(self, chunk_size: int = 2000, chunk_overlap: int = 400, max_process_time: int = 120):
         """
         Initialize the document processor with configuration for chunking
         
@@ -273,7 +273,7 @@ class DocumentProcessor:
     
     def _simple_chunk_text(self, text: str) -> List[str]:
         """
-        Simple and fast chunking method for large texts that would cause the regex to hang
+        Simplified chunking that preserves code blocks and important formatting
         
         Args:
             text: Text to split into chunks
@@ -281,76 +281,112 @@ class DocumentProcessor:
         Returns:
             List of text chunks
         """
+        # First, check if we need to split at all
+        if len(text) <= self.chunk_size:
+            return [text]
+        
+        # Try to identify code blocks (marked with triple backticks)
+        code_block_pattern = r'```(?:\w+)?\n[\s\S]*?```'
+        code_blocks = re.findall(code_block_pattern, text)
+        code_block_placeholders = {}
+        
+        # Replace code blocks with placeholders
+        for i, block in enumerate(code_blocks):
+            placeholder = f"__CODE_BLOCK_{i}__"
+            code_block_placeholders[placeholder] = block
+            text = text.replace(block, placeholder)
+        
+        # Split by paragraphs first
+        paragraphs = [p for p in text.split('\n\n') if p.strip()]
+        
         chunks = []
-        
-        # First try a simple paragraph split
-        paragraphs = text.split('\n\n')
-        
-        # If we don't have many paragraphs, split by newline
-        if len(paragraphs) < 3:
-            paragraphs = text.split('\n')
-            
-        # If we still don't have many splits, just force chunk by size
-        if len(paragraphs) < 3:
-            return [text[i:i+self.chunk_size] for i in range(0, len(text), self.chunk_size - self.chunk_overlap)]
-            
         current_chunk = ""
         
-        for para in paragraphs:
-            if not para.strip():
-                continue
-                
-            # If adding this paragraph would exceed chunk size
-            if len(current_chunk) + len(para) > self.chunk_size:
-                if current_chunk:
+        for paragraph in paragraphs:
+            # If paragraph contains a code block placeholder, treat it specially
+            if any(placeholder in paragraph for placeholder in code_block_placeholders):
+                # If adding this paragraph would make the chunk too large, save current chunk first
+                if len(current_chunk) + len(paragraph) > self.chunk_size and current_chunk:
                     chunks.append(current_chunk)
+                    current_chunk = ""
+                
+                # If paragraph itself is too large, it goes into its own chunk
+                if len(paragraph) > self.chunk_size:
+                    # If we have a current chunk, add it first
+                    if current_chunk:
+                        chunks.append(current_chunk)
+                        current_chunk = ""
                     
-                # Start overlap with last part of previous chunk
-                if self.chunk_overlap > 0 and len(current_chunk) > self.chunk_overlap:
-                    # Find a good break point for overlap
-                    overlap_start = len(current_chunk) - self.chunk_overlap
-                    # Try to find a space to break at
-                    space_pos = current_chunk.rfind(' ', overlap_start)
-                    if space_pos != -1 and space_pos > overlap_start:
-                        current_chunk = current_chunk[space_pos+1:]
+                    # Add the large paragraph as its own chunk
+                    chunks.append(paragraph)
+                else:
+                    # Add paragraph to current chunk
+                    if current_chunk:
+                        current_chunk += "\n\n" + paragraph
                     else:
-                        current_chunk = current_chunk[-self.chunk_overlap:]
-                else:
-                    current_chunk = ""
-                    
-                # If a single paragraph is larger than chunk size, split it
-                if len(para) > self.chunk_size:
-                    # For very large paragraphs, break them at sentence boundaries if possible
-                    sentences = para.split('. ')
-                    temp_chunk = ""
-                    for sentence in sentences:
-                        if len(temp_chunk) + len(sentence) > self.chunk_size:
-                            if temp_chunk:
-                                chunks.append(temp_chunk)
-                            temp_chunk = sentence
-                        else:
-                            if temp_chunk and not temp_chunk.endswith(' '):
-                                temp_chunk += ' '
-                            temp_chunk += sentence
-                            if not sentence.endswith('.'):
-                                temp_chunk += '.'
-                    
-                    if temp_chunk:
-                        chunks.append(temp_chunk)
-                        
-                    # Start with empty chunk since we've handled this paragraph
-                    current_chunk = ""
-                else:
-                    # Add paragraph to the new chunk
-                    current_chunk = para
+                        current_chunk = paragraph
             else:
-                # Add paragraph to current chunk
-                if current_chunk and not current_chunk.endswith('\n'):
-                    current_chunk += '\n\n'
-                current_chunk += para
+                # Regular paragraph handling
+                # If adding this paragraph would exceed chunk size
+                if len(current_chunk) + len(paragraph) + 2 > self.chunk_size:
+                    # If current chunk is not empty, add it to chunks
+                    if current_chunk:
+                        chunks.append(current_chunk)
+                    
+                    # Start new chunk with this paragraph
+                    if len(paragraph) > self.chunk_size:
+                        # The paragraph itself is too big, split by sentences
+                        sentences = re.split(r'(?<=[.!?])\s+', paragraph)
+                        current_chunk = ""
+                        for sentence in sentences:
+                            if len(current_chunk) + len(sentence) + 1 > self.chunk_size:
+                                if current_chunk:
+                                    chunks.append(current_chunk)
+                                    current_chunk = sentence
+                                else:
+                                    # Even a single sentence is too big
+                                    chunks.append(sentence[:self.chunk_size])
+                                    remainder = sentence[self.chunk_size:]
+                                    while remainder:
+                                        chunks.append(remainder[:self.chunk_size])
+                                        remainder = remainder[self.chunk_size:]
+                            else:
+                                if current_chunk:
+                                    current_chunk += " " + sentence
+                                else:
+                                    current_chunk = sentence
+                    else:
+                        current_chunk = paragraph
+                else:
+                    # Add paragraph to current chunk
+                    if current_chunk:
+                        current_chunk += "\n\n" + paragraph
+                    else:
+                        current_chunk = paragraph
         
-        # Add the last chunk if it has content
+        # Add the last chunk if it's not empty
         if current_chunk:
             chunks.append(current_chunk)
+        
+        # Restore code blocks
+        final_chunks = []
+        for chunk in chunks:
+            for placeholder, code_block in code_block_placeholders.items():
+                chunk = chunk.replace(placeholder, code_block)
+            final_chunks.append(chunk)
+        
+        # Ensure we have some overlap between chunks
+        if len(final_chunks) > 1 and self.chunk_overlap > 0:
+            overlapped_chunks = []
+            for i, chunk in enumerate(final_chunks):
+                if i > 0:
+                    # Get overlap from previous chunk
+                    prev_chunk = final_chunks[i-1]
+                    if len(prev_chunk) > self.chunk_overlap:
+                        overlap = prev_chunk[-self.chunk_overlap:]
+                        # Add overlap at the beginning of current chunk
+                        chunk = overlap + "\n\n" + chunk
+                overlapped_chunks.append(chunk)
+            final_chunks = overlapped_chunks
             
-        return chunks
+        return final_chunks
