@@ -1,19 +1,22 @@
-fastapi==0.115.12
-uvicorn==0.23.2
+fastapi>=0.100.0
+uvicorn>=0.23.0
 chromadb==0.4.15
 openai==1.77.0
 # Modern LangChain stack - latest versions
 langchain==0.3.8
 # Pydantic v2 is supported in modern LangChain
-pydantic==2.7.4
+pydantic>=2.0.0
 pydantic-core==2.18.4
-beautifulsoup4==4.12.2
-httpx==0.25.0
+beautifulsoup4>=4.12.2
+httpx>=0.24.0
 asyncio==3.4.3
-numpy==1.26.2
+numpy>=1.24.0
 sqlalchemy==2.0.22
 requests==2.31.0
 python-multipart==0.0.6
-python-dotenv==1.0.0
+python-dotenv>=1.0.0
 # Use pure Python FAISS implementation (no binary dependencies)
-faiss-cpu==1.11.0
+faiss-cpu>=1.7.4
+tiktoken>=0.5.1
+html2text>=2020.1.16
+markdown>=3.5.1
