@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 import asyncio
 import uvicorn
 from dotenv import load_dotenv
+from .middleware.json_error_handler import JSONErrorHandlerMiddleware
 
 from app.faiss_vector_store import FAISSVectorStore
 from app.crawler import crawl_website
@@ -35,6 +36,12 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+)
+
+# Add JSON error handler middleware
+app.add_middleware(
+    JSONErrorHandlerMiddleware,
+    openai_api_key=os.getenv("OPENAI_API_KEY")
 )
 
 # Create data directory if it doesn't exist
