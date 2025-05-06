@@ -20,6 +20,8 @@ A FastAPI application that implements Retrieval Augmented Generation (RAG) for d
 
 ## Installation
 
+### Local Setup
+
 1. Clone this repository
 2. Install dependencies:
    ```
@@ -40,6 +42,30 @@ A FastAPI application that implements Retrieval Augmented Generation (RAG) for d
    DATABASE_URL=sqlite:///./data/rag_database.db
    ```
 
+### Docker Deployment
+
+The application can be easily deployed using Docker and Docker Compose:
+
+1. Make sure Docker and Docker Compose are installed on your system
+2. Create a `.env` file as described above
+3. Build and start the container:
+   ```bash
+   docker-compose up -d
+   ```
+4. The application will be available at http://localhost:8000
+
+To stop the container:
+```bash
+docker-compose down
+```
+
+To view logs:
+```bash
+docker-compose logs -f
+```
+
+The `data` directory is mounted as a volume, so your vector indices and database will persist between container restarts.
+
 ## Usage
 
 Run the test script to verify functionality:
@@ -47,14 +73,36 @@ Run the test script to verify functionality:
 python test_rag_app.py
 ```
 
-Start the application:
+To test the API endpoints:
+```bash
+python test_api_endpoints.py
+```
+
+Start the application locally:
 ```bash
 python -m app.main
 ```
 
 This will start the FastAPI server on `http://localhost:8000`.
 
-### API Endpoints
+## Architecture
+
+- **Vector Store**: FAISS-based vector storage for efficient similarity search
+- **Concurrent Web Crawler**: Async crawler for efficient document retrieval
+- **Document Processor**: Intelligent text chunking with timeout protection
+- **LLM Interface**: Direct integration with Azure OpenAI API
+- **Database**: SQLite database for storing question-answer history
+- **Error Handling**: Improved error detection and recovery
+
+## Azure OpenAI Integration
+
+The system uses Azure OpenAI for two key components:
+1. **Text Embeddings**: Converting document chunks to vector embeddings
+2. **LLM Inference**: Generating coherent answers based on retrieved context
+
+The application has been optimized to work with Azure OpenAI models including newer versions like `gpt-4o-mini`.
+
+## API Endpoints
 
 - **GET /** - Welcome page with endpoint descriptions
 - **POST /crawl** - Crawl a documentation site
@@ -82,23 +130,6 @@ This will start the FastAPI server on `http://localhost:8000`.
   ```
 - **GET /history** - View Q&A history
 
-## Architecture
-
-- **Vector Store**: FAISS-based vector storage for efficient similarity search
-- **Concurrent Web Crawler**: Async crawler for efficient document retrieval
-- **Document Processor**: Intelligent text chunking with timeout protection
-- **LLM Interface**: Direct integration with Azure OpenAI API
-- **Database**: SQLite database for storing question-answer history
-- **Error Handling**: Improved error detection and recovery
-
-## Azure OpenAI Integration
-
-The system uses Azure OpenAI for two key components:
-1. **Text Embeddings**: Converting document chunks to vector embeddings
-2. **LLM Inference**: Generating coherent answers based on retrieved context
-
-The application has been optimized to work with Azure OpenAI models including newer versions like `gpt-4o-mini`.
-
 ## Testing
 
 The test suite includes:
@@ -111,4 +142,3 @@ The test suite includes:
 Run tests with:
 ```bash
 python test_rag_app.py
-```

@@ -1,0 +1,47 @@
+# Exclude development and version control files
+.git
+.github
+.gitignore
+.vscode
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Exclude environment files
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Exclude data files (we'll mount these as volumes)
+data/*
+*.db
+*.sqlite3
+
+# Exclude test files
+test_*.py
+*_test.py
+
+# Exclude documentation
+docs/
+*.md
+
+# Exclude Docker files
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Exclude log files
+logs/
+*.log
+
+# Exclude cache directories
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Specific to this project
+crawled_data/
