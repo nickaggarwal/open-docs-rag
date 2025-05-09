@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 # Initialize FastAPI app
 app = FastAPI(
     title="RAG Documentation Assistant",
-    description="A RAG-based API for crawling documentation sites and answering questions using Azure OpenAI",
+    description="A RAG-based API for crawling documentation sites and answering questions using Azure OpenAI or OpenAI APIs",
     version="1.0.0"
 )
 
@@ -48,10 +48,20 @@ app.add_middleware(
 os.makedirs("./data", exist_ok=True)
 os.makedirs("./data/faiss_index", exist_ok=True)
 
+# Determine which API to use
+use_azure = os.getenv("USE_AZURE_OPENAI", "true").lower() == "true"
+if use_azure:
+    logger.info("Using Azure OpenAI API for language model")
+    deployment_name = os.getenv("AZURE_OPENAI_DEPLOYMENT")
+    llm_interface = LLMInterface(deployment_name=deployment_name)
+else:
+    logger.info("Using direct OpenAI API for language model")
+    model_name = os.getenv("OPENAI_MODEL", "gpt-3.5-turbo")
+    llm_interface = LLMInterface(model_name=model_name)
+
 # Initialize components
 vector_store = FAISSVectorStore(index_path="./data/faiss_index/index")
 document_processor = DocumentProcessor()
-llm_interface = LLMInterface()
 database = Database()
 
 # Pydantic models for request/response validation
@@ -94,8 +104,13 @@ active_jobs = {}
 
 @app.get("/")
 async def root():
+    # Get information about which API is being used
+    api_type = "Azure OpenAI" if os.getenv("USE_AZURE_OPENAI", "true").lower() == "true" else "OpenAI"
+    model = os.getenv("AZURE_OPENAI_DEPLOYMENT") if api_type == "Azure OpenAI" else os.getenv("OPENAI_MODEL", "gpt-3.5-turbo")
+    
     return {
-        "message": "RAG Documentation Assistant API with Azure OpenAI",
+        "message": f"RAG Documentation Assistant API using {api_type}",
+        "model": model,
         "endpoints": [
             "/crawl - Crawl a documentation site",
             "/question - Ask a question",

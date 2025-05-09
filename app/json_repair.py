@@ -1,21 +1,58 @@
 import json
 import logging
+import os
 from typing import Dict, Any, Optional
 import openai
 from tenacity import retry, stop_after_attempt, wait_exponential
+from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
 
 class JSONRepair:
-    def __init__(self, openai_api_key: str):
+    def __init__(self, openai_api_key: str = None):
         """
-        Initialize JSON repair handler
+        Initialize JSON repair handler with support for both Azure OpenAI and direct OpenAI APIs
         
         Args:
-            openai_api_key: OpenAI API key
+            openai_api_key: OpenAI API key (optional, will use environment variables if not provided)
         """
-        self.openai_api_key = openai_api_key
-        openai.api_key = openai_api_key
+        # Force reload environment variables
+        load_dotenv(override=True)
+        
+        # Determine whether to use Azure OpenAI or direct OpenAI API
+        self.use_azure = os.getenv("USE_AZURE_OPENAI", "true").lower() == "true"
+        
+        if self.use_azure:
+            logger.info("Using Azure OpenAI API for JSON repair")
+            # Load Azure OpenAI configuration
+            self.azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
+            self.azure_api_key = os.getenv("AZURE_OPENAI_API_KEY")
+            self.azure_api_version = os.getenv("AZURE_OPENAI_API_VERSION")
+            self.azure_deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT")
+            
+            # Create OpenAI client configured for Azure
+            self.client = openai.OpenAI(
+                api_key=self.azure_api_key,
+                base_url=f"{self.azure_endpoint}/openai/deployments/{self.azure_deployment}",
+                default_query={"api-version": self.azure_api_version},
+            )
+            # Store the model/deployment name
+            self.model = self.azure_deployment
+        else:
+            logger.info("Using direct OpenAI API for JSON repair")
+            # Load or use provided OpenAI API key
+            self.openai_api_key = openai_api_key or os.getenv("OPENAI_API_KEY")
+            self.openai_model = os.getenv("OPENAI_MODEL", "gpt-3.5-turbo")
+            
+            if not self.openai_api_key:
+                logger.warning("OpenAI API key not found. JSON repair will fail.")
+            
+            # Create standard OpenAI client
+            self.client = openai.OpenAI(
+                api_key=self.openai_api_key,
+            )
+            # Store the model name
+            self.model = self.openai_model
         
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
     def repair_json(self, invalid_json: str, error_context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -33,15 +70,34 @@ class JSONRepair:
             # Construct prompt for OpenAI
             prompt = self._construct_prompt(invalid_json, error_context)
             
-            # Call OpenAI API
-            response = openai.ChatCompletion.create(
-                model="gpt-4",  # Using GPT-4 for better accuracy
-                messages=[
-                    {"role": "system", "content": "You are a JSON repair expert. Your task is to fix invalid JSON by identifying and correcting syntax errors, invalid control characters, and other issues."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.1  # Low temperature for more deterministic output
-            )
+            # Prepare messages for ChatCompletion
+            messages = [
+                {"role": "system", "content": "You are a JSON repair expert. Your task is to fix invalid JSON by identifying and correcting syntax errors, invalid control characters, and other issues."},
+                {"role": "user", "content": prompt}
+            ]
+            
+            # Log which API we're using
+            api_type = "Azure OpenAI" if self.use_azure else "OpenAI"
+            logger.info(f"Calling {api_type} API for JSON repair")
+            
+            # Create parameters dict with shared parameters
+            completion_params = {
+                "model": self.model,
+                "messages": messages,
+            }
+            
+            # Add API-specific parameters
+            if self.use_azure:
+                # Add Azure-specific parameter
+                completion_params["max_completion_tokens"] = 2000
+                # Azure doesn't support custom temperature for this model - don't set it
+            else:
+                # Add OpenAI-specific parameter
+                completion_params["max_tokens"] = 2000
+                completion_params["temperature"] = 0.1  # Low temperature for more deterministic output
+            
+            # Call OpenAI API using the client with the right parameters
+            response = self.client.chat.completions.create(**completion_params)
             
             # Extract repaired JSON from response
             repaired_json_str = response.choices[0].message.content.strip()
@@ -109,4 +165,4 @@ class JSONRepair:
                 "line": error.lineno,
                 "column": error.colno
             }
-        } 
+        }

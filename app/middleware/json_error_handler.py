@@ -9,8 +9,9 @@ from ..json_repair import JSONRepair
 logger = logging.getLogger(__name__)
 
 class JSONErrorHandlerMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app, openai_api_key: str):
+    def __init__(self, app, openai_api_key: str = None):
         super().__init__(app)
+        # Initialize JSONRepair with optional API key, will use environment variables if not provided
         self.json_repair = JSONRepair(openai_api_key)
         
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
@@ -62,4 +63,4 @@ class JSONErrorHandlerMiddleware(BaseHTTPMiddleware):
                         "ctx": {"error": str(e)}
                     }]
                 }
-            ) 
+            )

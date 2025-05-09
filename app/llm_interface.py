@@ -12,37 +12,62 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class LLMInterface:
-    def __init__(self, deployment_name=None):
+    def __init__(self, deployment_name=None, model_name=None):
         """
-        Initialize the LLM interface for generating answers using Azure OpenAI directly
+        Initialize the LLM interface for generating answers using OpenAI APIs
         
         Args:
             deployment_name: Azure OpenAI deployment name (optional)
+            model_name: OpenAI model name for direct OpenAI API (optional)
         """
         # Force reload environment variables
         load_dotenv(override=True)
         
-        # Load Azure OpenAI configuration
-        self.azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
-        self.azure_api_key = os.getenv("AZURE_OPENAI_API_KEY")
-        self.azure_api_version = os.getenv("AZURE_OPENAI_API_VERSION")
-        self.azure_deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT", deployment_name)
+        # Determine whether to use Azure OpenAI or direct OpenAI API
+        self.use_azure = os.getenv("USE_AZURE_OPENAI", "true").lower() == "true"
+        
+        if self.use_azure:
+            logger.info("Using Azure OpenAI API")
+            # Load Azure OpenAI configuration
+            self.azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
+            self.azure_api_key = os.getenv("AZURE_OPENAI_API_KEY")
+            self.azure_api_version = os.getenv("AZURE_OPENAI_API_VERSION")
+            self.azure_deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT", deployment_name)
 
-        logger.info(f"Azure OpenAI API version: {self.azure_api_version}")
-        logger.info(f"Azure OpenAI deployment: {self.azure_deployment}")
-        
-        logger.info(f"Initializing Azure OpenAI with endpoint: {self.azure_endpoint}, " 
-                   f"deployment: {self.azure_deployment}, API version: {self.azure_api_version}")
-        
-        if not self.azure_endpoint or not self.azure_api_key:
-            logger.warning("Azure OpenAI credentials not found. LLM operations will fail.")
-        
-        # Create OpenAI client configured for Azure
-        self.client = openai.OpenAI(
-            api_key=self.azure_api_key,
-            base_url=f"{self.azure_endpoint}/openai/deployments/{self.azure_deployment}",
-            default_query={"api-version": self.azure_api_version},
-        )
+            logger.info(f"Azure OpenAI API version: {self.azure_api_version}")
+            logger.info(f"Azure OpenAI deployment: {self.azure_deployment}")
+            
+            logger.info(f"Initializing Azure OpenAI with endpoint: {self.azure_endpoint}, " 
+                       f"deployment: {self.azure_deployment}, API version: {self.azure_api_version}")
+            
+            if not self.azure_endpoint or not self.azure_api_key:
+                logger.warning("Azure OpenAI credentials not found. LLM operations will fail.")
+            
+            # Create OpenAI client configured for Azure
+            self.client = openai.OpenAI(
+                api_key=self.azure_api_key,
+                base_url=f"{self.azure_endpoint}/openai/deployments/{self.azure_deployment}",
+                default_query={"api-version": self.azure_api_version},
+            )
+            # Store the model/deployment name
+            self.model = self.azure_deployment
+        else:
+            logger.info("Using direct OpenAI API")
+            # Load OpenAI configuration
+            self.openai_api_key = os.getenv("OPENAI_API_KEY")
+            self.openai_model = os.getenv("OPENAI_MODEL", model_name or "gpt-3.5-turbo")
+            
+            logger.info(f"OpenAI model: {self.openai_model}")
+            
+            if not self.openai_api_key:
+                logger.warning("OpenAI API key not found. LLM operations will fail.")
+            
+            # Create standard OpenAI client
+            self.client = openai.OpenAI(
+                api_key=self.openai_api_key,
+            )
+            # Store the model name
+            self.model = self.openai_model
         
         # Default QA prompt template
         self.qa_prompt_template = """You are a helpful AI assistant. Use the following context to answer the question.
@@ -117,12 +142,9 @@ Answer the question based on the context provided. If the answer is not containe
             question=question
         )
         
-        # Generate answer with Azure OpenAI API directly
+        # Generate answer with OpenAI API
         try:
             logger.info(f"Generating answer for question: {question}")
-            
-            # Log API request details
-            logger.info(f"Using deployment: {self.azure_deployment}, API version: {self.azure_api_version}")
             
             # Prepare request payload
             messages = [
@@ -130,18 +152,33 @@ Answer the question based on the context provided. If the answer is not containe
                 {"role": "user", "content": prompt}
             ]
             
-            # Log request payload
-            logger.info(f"Request payload to Azure OpenAI: messages={messages}, max_completion_tokens=2500")
+            # Create parameters dict with shared parameters
+            completion_params = {
+                "model": self.model,
+                "messages": messages,
+            }
             
-            # Make API call to Azure OpenAI
-            response = self.client.chat.completions.create(
-                model=self.azure_deployment,  # This is ignored for Azure but required
-                messages=messages,
-                max_completion_tokens=2500  # Increased from 800 to 2500 for longer responses
-            )
+            if self.use_azure:
+                # Log Azure-specific details
+                logger.info(f"Using Azure deployment: {self.azure_deployment}, API version: {self.azure_api_version}")
+                logger.info(f"Request payload to Azure OpenAI: messages={messages}, max_completion_tokens=2500")
+                # Add Azure-specific parameter
+                completion_params["max_completion_tokens"] = 2500
+                # Azure doesn't support custom temperature for this model - don't set it
+            else:
+                # Log OpenAI-specific details
+                logger.info(f"Using OpenAI model: {self.openai_model}")
+                logger.info(f"Request payload to OpenAI: messages={messages}, max_tokens=2500")
+                # Add OpenAI-specific parameters
+                completion_params["max_tokens"] = 2500
+                completion_params["temperature"] = 0.7
             
-            # Log response from Azure OpenAI
-            logger.info(f"Azure OpenAI response: id={response.id}, model={response.model}, finish_reason={response.choices[0].finish_reason}, usage={response.usage}")
+            # Make API call to appropriate OpenAI service with the right parameters
+            response = self.client.chat.completions.create(**completion_params)
+            
+            # Log API response
+            api_type = "Azure OpenAI" if self.use_azure else "OpenAI"
+            logger.info(f"{api_type} response: id={response.id}, model={response.model}, finish_reason={response.choices[0].finish_reason}, usage={response.usage}")
             
             answer = response.choices[0].message.content
             
@@ -154,17 +191,19 @@ Answer the question based on the context provided. If the answer is not containe
             import traceback
             logger.error(f"Complete error: {traceback.format_exc()}")
             
-            # Try to provide a more helpful error message
+            # Try to provide a more helpful error message based on API type
             error_msg = str(e)
-            if "api version" in error_msg.lower():
+            api_type = "Azure OpenAI" if self.use_azure else "OpenAI"
+            
+            if self.use_azure and "api version" in error_msg.lower():
                 suggestion = "Try updating AZURE_OPENAI_API_VERSION in your .env file to a newer version like 2024-02-01 or 2024-12-01-preview."
                 logger.error(f"API Version issue detected. {suggestion}")
                 return {
-                    "answer": f"I encountered an API version compatibility error. {suggestion}",
+                    "answer": f"I encountered an API version compatibility error with {api_type}. {suggestion}",
                     "sources": []
                 }
             
             return {
-                "answer": "I encountered an error while generating the answer.",
+                "answer": f"I encountered an error while generating the answer with {api_type}.",
                 "sources": []
             }
