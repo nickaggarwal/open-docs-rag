@@ -80,30 +80,57 @@ class FAISSVectorStore:
     
     def _load_index(self):
         """Load FAISS index and document data if exists"""
-        index_file = f"{self.index_path}/faiss.index"
-        docs_file = f"{self.index_path}/documents.pkl"
+        index_file = f"{self.index_path}.index"
+        docs_file = f"{self.index_path}.documents.json"
+        id_map_file = f"{self.index_path}.id_map.json"
+        
+        # Fall back to old format files if new ones don't exist
+        old_docs_file = f"{self.index_path}.documents"
+        old_id_map_file = f"{self.index_path}.id_map"
         
         try:
-            if os.path.exists(index_file) and os.path.exists(docs_file):
+            # Check if the index file exists
+            if os.path.exists(index_file):
                 # Load FAISS index
                 self.index = faiss.read_index(index_file)
                 
-                # Load documents and ID map
-                with open(docs_file, 'rb') as f:
-                    data = pickle.load(f)
-                    self.documents = data.get('documents', [])
-                    self.id_map = data.get('id_map', {})
+                # Load documents - prefer JSON over pickle
+                if os.path.exists(docs_file):
+                    with open(docs_file, 'r') as f:
+                        self.documents = json.load(f)
+                elif os.path.exists(old_docs_file):
+                    with open(old_docs_file, 'rb') as f:
+                        self.documents = pickle.load(f)
+                else:
+                    self.documents = []
+                    logger.warning(f"Documents file not found at {docs_file} or {old_docs_file}")
+                
+                # Load ID map - prefer JSON over pickle
+                if os.path.exists(id_map_file):
+                    with open(id_map_file, 'r') as f:
+                        string_id_map = json.load(f)
+                        self.id_map = {k: int(v) for k, v in string_id_map.items()}
+                elif os.path.exists(old_id_map_file):
+                    with open(old_id_map_file, 'rb') as f:
+                        self.id_map = pickle.load(f)
+                else:
+                    self.id_map = {}
+                    logger.warning(f"ID map file not found at {id_map_file} or {old_id_map_file}")
                 
                 logger.info(f"Loaded existing index with {len(self.documents)} documents")
             else:
                 # Create new index
                 self.index = faiss.IndexFlatL2(self.dimension)
+                self.documents = []
+                self.id_map = {}
                 logger.info("Created new FAISS index")
         except Exception as e:
+            # Create new index if loading fails
             logger.error(f"Error loading index: {str(e)}")
-            # Create new index as fallback
             self.index = faiss.IndexFlatL2(self.dimension)
-            logger.info("Created new FAISS index due to loading error")
+            self.documents = []
+            self.id_map = {}
+            logger.info("Created new FAISS index due to load error")
     
     async def generate_embedding(self, text: str) -> np.ndarray:
         """Generate embedding for text using OpenAI's embedding model"""
@@ -210,6 +237,7 @@ class FAISSVectorStore:
                 # For very long texts, handle them individually
                 if est_tokens > 8000:
                     logger.warning(f"Text too long for embedding: ~{est_tokens} tokens. Will process individually.")
+                    
                     # Process long text separately
                     emb = await self.generate_embedding(text)
                     all_embeddings.append(emb)
@@ -455,15 +483,22 @@ class FAISSVectorStore:
     
     async def search(self, query: str, k: int = 5) -> List[Dict[str, Any]]:
         """
-        Search for documents similar to the query
+        Search for similar documents
         
         Args:
-            query: Query text
+            query: Query string
             k: Number of results to return
             
         Returns:
-            List of documents with similarity scores
+            List of document dictionaries with similarity scores
         """
+        # Load index if not already loaded
+        self._load_index()
+        
+        if not self.index:
+            logger.warning("No index loaded")
+            return []
+            
         if not self.documents:
             logger.warning("No documents in the index")
             return []
@@ -472,26 +507,157 @@ class FAISSVectorStore:
             # Generate query embedding
             query_embedding = await self.generate_embedding(query)
             
-            # Search the index
-            k = min(k, len(self.documents))
+            # Search the index - retrieve more results than needed for re-ranking
+            retrieval_k = min(k * 3, len(self.documents))  # Retrieve 3x more for re-ranking
             distances, indices = self.index.search(
-                np.array([query_embedding], dtype=np.float32), k=k
+                np.array([query_embedding], dtype=np.float32), k=retrieval_k
             )
             
-            # Format results
-            results = []
+            # First pass results
+            initial_results = []
             for i, (dist, idx) in enumerate(zip(distances[0], indices[0])):
                 if idx != -1:  # Valid result
                     doc = self.documents[idx].copy()
                     # Convert distance to similarity score (lower distance = higher similarity)
-                    score = 1.0 / (1.0 + dist)
-                    doc["score"] = float(score)
-                    results.append(doc)
+                    embedding_score = 1.0 / (1.0 + dist)
+                    doc["embedding_score"] = float(embedding_score)
+                    initial_results.append(doc)
             
-            return results
+            # If we have no results, return empty list
+            if not initial_results:
+                return []
+                
+            # Re-rank results based on document structure
+            weighted_results = []
+            for doc in initial_results:
+                # Start with the embedding score
+                final_score = doc["embedding_score"]
+                
+                # Extract text and metadata
+                text = doc["text"]
+                metadata = doc.get("metadata", {})
+                
+                # Weight 1: Boost documents with matching headings
+                heading = metadata.get("heading", "")
+                if heading:
+                    # Check if any query terms appear in the heading
+                    query_terms = [term.lower() for term in query.split() if len(term) > 3]
+                    heading_lower = heading.lower()
+                    heading_match_count = sum(1 for term in query_terms if term in heading_lower)
+                    # Apply heading boost (0.1 per matching term)
+                    heading_boost = min(0.3, heading_match_count * 0.1)
+                    final_score += heading_boost
+                
+                # Weight 2: Boost priority to the first paragraph
+                paragraphs = text.split('\n\n')
+                if paragraphs:
+                    first_para = paragraphs[0]
+                    # Check if any query terms appear in the first paragraph
+                    query_terms = [term.lower() for term in query.split() if len(term) > 3]
+                    first_para_lower = first_para.lower()
+                    first_para_match_count = sum(1 for term in query_terms if term in first_para_lower)
+                    # Apply first paragraph boost (0.05 per matching term)
+                    first_para_boost = min(0.2, first_para_match_count * 0.05)
+                    final_score += first_para_boost
+                
+                # Apply level boost for headings with higher hierarchy (H1, H2)
+                level = metadata.get("level", 0)
+                if level > 0:
+                    # Level 1 (H1) gets highest boost, decreasing for H2, H3, etc.
+                    level_boost = max(0, 0.15 - ((level - 1) * 0.05))
+                    final_score += level_boost
+                
+                # Remove the embedding_score from the final document
+                doc.pop("embedding_score", None)
+                # Update with final weighted score
+                doc["score"] = min(1.0, final_score)  # Cap at 1.0
+                weighted_results.append(doc)
+            
+            # Sort by final score and take top k
+            weighted_results.sort(key=lambda x: x["score"], reverse=True)
+            return weighted_results[:k]
+            
         except Exception as e:
             logger.error(f"Error searching: {str(e)}")
+            import traceback
+            logger.error(f"Complete search error: {traceback.format_exc()}")
             return []
+    
+    async def remove_documents_by_domain(self, domain: str) -> int:
+        """
+        Remove all documents from a specific domain from the vector store
+        
+        Args:
+            domain: Domain name (e.g., 'example.com')
+            
+        Returns:
+            Number of documents removed
+        """
+        # Load index if not already loaded
+        self._load_index()
+        
+        if not self.index:
+            logger.warning("No index loaded to remove documents from")
+            return 0
+            
+        # Load the document metadata
+        self.load(self.index_path)
+        
+        # Find document IDs to remove
+        ids_to_remove = []
+        
+        for doc in self.documents:
+            url = doc.get("metadata", {}).get("url", "")
+            
+            # Check if the URL contains this domain
+            if domain in url:
+                ids_to_remove.append(doc["id"])
+                
+        if not ids_to_remove:
+            logger.info(f"No documents found with domain '{domain}'")
+            return 0
+            
+        logger.info(f"Removing {len(ids_to_remove)} documents from domain '{domain}'")
+        
+        # Generate list of IDs to keep
+        all_ids = list(self.id_map.keys())
+        keep_ids = [doc_id for doc_id in all_ids if doc_id not in ids_to_remove]
+        
+        # Create new index and transfer data
+        new_index = faiss.IndexFlatL2(self.dimension)
+        
+        if keep_ids:
+            # Build a list of vectors to retain
+            keep_vectors = []
+            new_documents = []
+            new_id_map = {}
+            
+            # Transfer vectors and metadata for documents we're keeping
+            for doc_id in keep_ids:
+                vector_idx = self.id_map[doc_id]
+                vector = self.index.reconstruct(vector_idx)
+                keep_vectors.append(vector)
+                new_documents.append(self.documents[vector_idx])
+                new_id_map[doc_id] = len(new_documents) - 1
+                
+            # Add vectors to new index
+            keep_vectors = np.array(keep_vectors).astype('float32')
+            new_index.add(keep_vectors)
+            
+            # Update index and metadata
+            self.index = new_index
+            self.documents = new_documents
+            self.id_map = new_id_map
+        else:
+            # If no documents remain, just reset everything
+            self.index = new_index
+            self.documents = []
+            self.id_map = {}
+        
+        # Save the updated index and metadata
+        self.save(self.index_path)
+        
+        return len(ids_to_remove)
     
     def save(self, path: str) -> None:
         """
@@ -572,7 +738,7 @@ class FAISSVectorStore:
                     logger.info(f"Loaded {len(self.documents)} documents from JSON")
                 else:
                     # Fall back to pickle if JSON not available
-                    with open(document_file, "rb") as f:
+                    with open(document_file, 'rb') as f:
                         self.documents = pickle.load(f)
                     logger.info(f"Loaded {len(self.documents)} documents from pickle")
             else:
@@ -588,7 +754,7 @@ class FAISSVectorStore:
                         # Convert string keys back to original type if needed
                         self.id_map = {k: int(v) for k, v in string_id_map.items()}
                 else:
-                    with open(id_map_file, "rb") as f:
+                    with open(id_map_file, 'rb') as f:
                         self.id_map = pickle.load(f)
             else:
                 logger.warning(f"ID map file not found at {id_map_file}")

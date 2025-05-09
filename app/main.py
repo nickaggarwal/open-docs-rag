@@ -8,6 +8,8 @@ import asyncio
 import uvicorn
 from dotenv import load_dotenv
 from .middleware.json_error_handler import JSONErrorHandlerMiddleware
+import uuid
+import urllib.parse
 
 from app.faiss_vector_store import FAISSVectorStore
 from app.crawler import crawl_website
@@ -68,6 +70,7 @@ database = Database()
 class CrawlRequest(BaseModel):
     url: str
     max_pages: int = Field(default=100, ge=1, le=1000)
+    incremental: bool = Field(default=True)
 
 class CrawlResponse(BaseModel):
     job_id: str
@@ -120,20 +123,80 @@ async def root():
         ]
     }
 
-async def crawl_and_index(job_id: str, url: str, max_pages: int):
-    """Background task to crawl a website and index its content"""
+@app.post("/crawl")
+async def start_crawl(req: CrawlRequest) -> Dict[str, Any]:
+    """
+    Start a crawl job for a documentation site
+    
+    Args:
+        req: Crawl request with URL and max pages
+        
+    Returns:
+        Job information with ID
+    """
     try:
+        url = req.url
+        max_pages = req.max_pages
+        incremental = req.incremental if hasattr(req, 'incremental') else True
+        
+        # Generate a job ID
+        job_id = str(uuid.uuid4())
+        
+        # Add to active jobs
         active_jobs[job_id] = {
             "status": "running",
             "message": "Starting crawl job",
             "documents_processed": 0
         }
         
-        # Crawl the website
-        logger.info(f"Starting crawl of {url} with max_pages={max_pages}")
-        documents = await crawl_website(url, max_pages)
+        # Launch crawl task in background
+        asyncio.create_task(process_crawl_job(job_id, url, max_pages, incremental))
         
-        active_jobs[job_id]["message"] = f"Crawled {len(documents)} documents, processing..."
+        return {
+            "job_id": job_id,
+            "status": "started",
+            "message": "Crawl job started"
+        }
+    except Exception as e:
+        logger.error(f"Error starting crawl: {str(e)}")
+        return {
+            "status": "error",
+            "message": f"Failed to start crawl: {str(e)}"
+        }
+
+async def process_crawl_job(job_id: str, url: str, max_pages: int, incremental: bool = True):
+    """
+    Process a crawl job in the background
+    
+    Args:
+        job_id: Job ID
+        url: URL to crawl
+        max_pages: Maximum pages to crawl
+        incremental: Whether to use incremental crawling
+    """
+    try:
+        # Crawl the website - now returns both documents and whether changes were detected
+        logger.info(f"Starting crawl of {url} with max_pages={max_pages}, incremental={incremental}")
+        documents, has_changes = await crawl_website(url, max_pages, incremental)
+        
+        active_jobs[job_id]["message"] = f"Crawled {len(documents)} documents, changes detected: {has_changes}"
+        
+        if not documents:
+            active_jobs[job_id]["status"] = "completed"
+            active_jobs[job_id]["message"] = "No documents found or no changes detected"
+            return
+            
+        # If incremental crawling is enabled and changes were detected, we need to remove old documents 
+        # from this URL domain before adding new ones
+        if incremental and has_changes:
+            # Parse the domain from the URL to remove documents from that domain
+            parsed_url = urllib.parse.urlparse(url)
+            domain = parsed_url.netloc
+            
+            # Remove existing documents with the same domain
+            active_jobs[job_id]["message"] = f"Removing old documents from {domain} before adding new ones"
+            removed_count = await vector_store.remove_documents_by_domain(domain)
+            logger.info(f"Removed {removed_count} old documents from domain {domain}")
         
         # Process documents into chunks
         processed_docs = await document_processor.process_documents(documents)
@@ -149,32 +212,10 @@ async def crawl_and_index(job_id: str, url: str, max_pages: int):
         active_jobs[job_id]["status"] = "completed"
         active_jobs[job_id]["message"] = f"Indexed {len(processed_docs)} document chunks successfully"
         
-        logger.info(f"Completed crawl job {job_id}")
-        
     except Exception as e:
         logger.error(f"Error in crawl job {job_id}: {str(e)}")
-        active_jobs[job_id] = {
-            "status": "error",
-            "message": f"Error: {str(e)}",
-            "documents_processed": active_jobs[job_id].get("documents_processed", 0)
-        }
-
-@app.post("/crawl", response_model=CrawlResponse)
-async def crawl_site(request: CrawlRequest, background_tasks: BackgroundTasks):
-    """
-    Crawl a documentation site and index its content for RAG
-    """
-    # Generate a job ID
-    job_id = f"crawl_{len(active_jobs) + 1}"
-    
-    # Start the background task
-    background_tasks.add_task(crawl_and_index, job_id, request.url, request.max_pages)
-    
-    return {
-        "job_id": job_id,
-        "message": f"Started crawling {request.url}",
-        "status": "running"
-    }
+        active_jobs[job_id]["status"] = "error"
+        active_jobs[job_id]["message"] = f"Error: {str(e)}"
 
 @app.get("/job-status/{job_id}", response_model=JobStatus)
 async def get_job_status(job_id: str):

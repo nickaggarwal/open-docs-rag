@@ -107,6 +107,10 @@ Answer the question based on the context provided. If the answer is not containe
             if isinstance(doc, dict):
                 text = doc.get("text", "")
                 metadata = doc.get("metadata", {})
+                # If we have a score from our weighted search, log it
+                score = doc.get("score", None)
+                if score is not None:
+                    logger.info(f"Document {i+1} score: {score}")
             else:
                 # Try to extract attributes directly if not a dict
                 text = getattr(doc, "text", str(doc)) if hasattr(doc, "text") else str(doc)
@@ -123,11 +127,16 @@ Answer the question based on the context provided. If the answer is not containe
             if isinstance(metadata, dict):
                 source = metadata.get("url")
                 title = metadata.get("title", source or title)
+                
+                # Include heading information if available
+                heading = metadata.get("heading")
+                if heading:
+                    title = f"{title} - {heading}"
             elif hasattr(metadata, "url"):
                 source = metadata.url
                 title = getattr(metadata, "title", source or title)
             
-            # Add to context
+            # Add to context - include metadata that might help LLM understand importance
             context_parts.append(f"Document {i+1} (Source: {title}):\n{text}\n")
             
             # Add unique sources

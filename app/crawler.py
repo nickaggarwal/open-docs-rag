@@ -1,17 +1,20 @@
 import asyncio
 import logging
 import time
-from typing import List, Dict, Any, Set, Optional
+from typing import List, Dict, Any, Set, Optional, Tuple
 import httpx
 from bs4 import BeautifulSoup
 import urllib.parse
+from .crawl_memory import CrawlMemory
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class WebCrawler:
     def __init__(self, base_url: str, max_pages: int = 100, concurrency: int = 5, 
-                 timeout: int = 30, overall_timeout: int = 300):
+                 timeout: int = 30, overall_timeout: int = 300, 
+                 crawl_memory: Optional[CrawlMemory] = None,
+                 incremental: bool = True):
         """
         Initialize a web crawler for documentation sites
         
@@ -21,6 +24,8 @@ class WebCrawler:
             concurrency: Maximum number of concurrent requests
             timeout: Timeout for individual HTTP requests in seconds
             overall_timeout: Overall timeout for the entire crawl operation
+            crawl_memory: Optional CrawlMemory instance for incremental crawling
+            incremental: Whether to enable incremental crawling
         """
         self.base_url = base_url
         self.max_pages = max_pages
@@ -30,6 +35,10 @@ class WebCrawler:
         self.visited_urls: Set[str] = set()
         self.queue: List[str] = []
         self.semaphore = asyncio.Semaphore(concurrency)
+        self.crawl_memory = crawl_memory or CrawlMemory()
+        self.incremental = incremental
+        self.modified_urls: Set[str] = set()  # Track which URLs have been modified
+        self.unchanged_urls: Set[str] = set()  # Track which URLs are unchanged
         
     def normalize_url(self, url: str) -> str:
         """Normalize URL to avoid duplicates"""
@@ -99,55 +108,54 @@ class WebCrawler:
                         if len(code_text.strip()) > 0:
                             code_blocks.append(f"\n```\n{code_text}\n```\n")
                     
-                    # Append code blocks to the text
-                    if code_blocks:
-                        text += "\n\nCode Examples:\n" + "\n".join(code_blocks)
-                    
-                    # Normalize whitespace while preserving line breaks
-                    text = '\n'.join([' '.join(line.split()) for line in text.split('\n') if line.strip()])
-                    
-                    # Skip pages with too little content
-                    if len(text) < 50:
-                        logger.warning(f"Skipping page with insufficient content: {url}")
-                        return None
-                    
                     # Extract title
                     title = soup.title.string if soup.title else url
                     
-                    # Find new links - limit to a reasonable number to prevent queue explosion
-                    new_urls = []
-                    link_count = 0
+                    # Extract all links
+                    links = []
                     for link in soup.find_all('a', href=True):
-                        if link_count >= 100:  # Limit links per page
-                            break
-                            
                         href = link['href']
-                        # Handle relative URLs
-                        full_url = urllib.parse.urljoin(url, href)
-                        normalized_url = self.normalize_url(full_url)
+                        # Convert relative URLs to absolute
+                        if href.startswith('/'):
+                            parsed_base = urllib.parse.urlparse(url)
+                            href = urllib.parse.urlunparse((parsed_base.scheme, parsed_base.netloc, href, '', '', ''))
+                        elif not href.startswith(('http://', 'https://')):
+                            # Handle other relative URLs (like '../path' or 'page.html')
+                            href = urllib.parse.urljoin(url, href)
                         
-                        if (normalized_url not in self.visited_urls and 
-                            self.is_valid_url(normalized_url) and
-                            normalized_url not in new_urls):  # Avoid duplicates
-                            new_urls.append(normalized_url)
-                            link_count += 1
+                        # Normalize and validate URL
+                        href = self.normalize_url(href)
+                        if self.is_valid_url(href):
+                            links.append(href)
+                    
+                    # Check for content change if incremental crawling is enabled
+                    content_changed = True
+                    if self.incremental:
+                        content_changed = self.crawl_memory.has_content_changed(url, text)
+                        if content_changed:
+                            # Update memory with new content
+                            self.crawl_memory.update_memory(url, text)
+                            self.modified_urls.add(url)
+                            logger.info(f"Content changed for {url}")
+                        else:
+                            self.unchanged_urls.add(url)
+                            logger.info(f"Content unchanged for {url}")
                     
                     return {
                         "url": url,
                         "title": title,
                         "text": text,
-                        "links": new_urls
+                        "links": links,
+                        "content_changed": content_changed,
+                        "code_blocks": code_blocks
                     }
-            except httpx.TimeoutException:
-                logger.warning(f"Timeout fetching {url}")
-                return None
             except Exception as e:
                 logger.error(f"Error fetching {url}: {str(e)}")
                 return None
     
     async def crawl(self) -> List[Dict[str, Any]]:
         """
-        Crawl the documentation site
+        Crawl the website and extract text content
         
         Returns:
             List of documents with text content and metadata
@@ -155,6 +163,7 @@ class WebCrawler:
         self.queue = [self.base_url]
         self.visited_urls = set()
         documents = []
+        modified_documents = []  # Track documents that have changed
         
         # Set an overall timeout for the crawl process
         start_time = time.time()
@@ -196,14 +205,29 @@ class WebCrawler:
                     stalled_count = 0  # Reset stalled count if we got valid results
                 
                 for result in valid_results:
-                    documents.append({
-                        "text": result["text"],
-                        "metadata": {
-                            "url": result["url"],
-                            "title": result["title"],
-                            "source": "web_crawler"
+                    # For incremental crawling, only add documents that have changed
+                    if not self.incremental or result.get("content_changed", True):
+                        document = {
+                            "text": result["text"],
+                            "metadata": {
+                                "url": result["url"],
+                                "title": result["title"],
+                                "source": "web_crawler"
+                            }
                         }
-                    })
+                        documents.append(document)
+                        modified_documents.append(document)
+                    else:
+                        # Still add to all documents but track that this one is unchanged
+                        document = {
+                            "text": result["text"],
+                            "metadata": {
+                                "url": result["url"],
+                                "title": result["title"],
+                                "source": "web_crawler"
+                            }
+                        }
+                        documents.append(document)
                     
                     # Add new URLs to queue with priority for shorter paths
                     # (typically better for documentation sites)
@@ -217,28 +241,49 @@ class WebCrawler:
                 # Continue with the next batch rather than failing the entire crawl
             
             logger.info(f"Crawled {len(self.visited_urls)} pages, queue size: {len(self.queue)}, " +
-                       f"documents: {len(documents)}")
+                       f"documents: {len(documents)}, modified: {len(modified_documents)}")
+        
+        # Save the updated crawl memory
+        if self.incremental:
+            self.crawl_memory.save_memory()
+            logger.info(f"Crawl completed: {len(documents)} total documents, " +
+                       f"{len(modified_documents)} modified documents, " +
+                       f"{len(self.modified_urls)} modified URLs, " +
+                       f"{len(self.unchanged_urls)} unchanged URLs")
         
         if not documents:
             logger.warning("Crawl completed but no documents were found!")
-            
+        
+        # If incremental, return only modified documents
+        if self.incremental:
+            return modified_documents
+        
         return documents
 
-async def crawl_website(url: str, max_pages: int = 100) -> List[Dict[str, Any]]:
+async def crawl_website(url: str, max_pages: int = 100, incremental: bool = True) -> Tuple[List[Dict[str, Any]], bool]:
     """
     Utility function to crawl a website
     
     Args:
         url: URL to start crawling from
         max_pages: Maximum number of pages to crawl
+        incremental: Whether to use incremental crawling (skip unchanged content)
         
     Returns:
-        List of documents with text and metadata
+        Tuple of (documents, has_changes)
+        - documents: List of documents with text and metadata
+        - has_changes: Boolean indicating if any content has changed since last crawl
     """
-    crawler = WebCrawler(url, max_pages=max_pages)
-    logger.info(f"Starting crawl of {url} with max_pages={max_pages}")
+    # Initialize crawler with crawl memory for incremental crawling
+    crawl_memory = CrawlMemory()
+    crawler = WebCrawler(url, max_pages=max_pages, crawl_memory=crawl_memory, incremental=incremental)
+    
+    logger.info(f"Starting crawl of {url} with max_pages={max_pages}, incremental={incremental}")
     try:
-        return await crawler.crawl()
+        documents = await crawler.crawl()
+        has_changes = len(documents) > 0 if incremental else True
+        
+        return documents, has_changes
     except Exception as e:
         logger.error(f"Unexpected error during crawl: {str(e)}")
-        return []  # Return empty list instead of crashing
+        return [], False  # Return empty list and no changes
