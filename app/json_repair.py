@@ -76,25 +76,22 @@ class JSONRepair:
                 {"role": "user", "content": prompt}
             ]
             
-            # Log which API we're using
-            api_type = "Azure OpenAI" if self.use_azure else "OpenAI"
-            logger.info(f"Calling {api_type} API for JSON repair")
-            
             # Create parameters dict with shared parameters
             completion_params = {
                 "model": self.model,
                 "messages": messages,
+                "max_completion_tokens": 2000  # Use consistently for both Azure and OpenAI
             }
             
-            # Add API-specific parameters
-            if self.use_azure:
-                # Add Azure-specific parameter
-                completion_params["max_completion_tokens"] = 2000
-                # Azure doesn't support custom temperature for this model - don't set it
-            else:
-                # Add OpenAI-specific parameter
-                completion_params["max_tokens"] = 2000
-                completion_params["temperature"] = 0.1  # Low temperature for more deterministic output
+            # Detect if we're using an Azure endpoint by checking the base_url
+            is_azure_endpoint = False
+            if hasattr(self.client, 'base_url'):
+                base_url_str = str(getattr(self.client, 'base_url', ''))
+                is_azure_endpoint = 'azure' in base_url_str.lower()
+            
+            # Log which API we're using
+            api_type = "Azure OpenAI" if is_azure_endpoint or self.use_azure else "OpenAI"
+            logger.info(f"Calling {api_type} API for JSON repair")
             
             # Call OpenAI API using the client with the right parameters
             response = self.client.chat.completions.create(**completion_params)

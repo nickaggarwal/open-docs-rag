@@ -24,21 +24,46 @@ class FAISSVectorStore:
             index_path: Base path to save/load the FAISS index
             dimension: Dimension of embeddings (1536 for OpenAI's ada-002)
         """
-        # Load Azure OpenAI configuration
-        self.azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
-        self.azure_api_key = os.getenv("AZURE_OPENAI_API_KEY")
-        self.azure_api_version = os.getenv("AZURE_OPENAI_API_VERSION")
-        self.azure_embedding_deployment = os.getenv("AZURE_EMBEDDING_DEPLOYMENT", "text-embedding-ada-002")
+        # Force reload environment variables
+        load_dotenv(override=True)
         
-        if not self.azure_endpoint or not self.azure_api_key:
-            logger.warning("Azure OpenAI credentials not found. Vector operations will fail.")
+        # Determine whether to use Azure OpenAI or direct OpenAI API
+        self.use_azure = os.getenv("USE_AZURE_OPENAI", "true").lower() == "true"
+        
+        if self.use_azure:
+            logger.info("Using Azure OpenAI API for embeddings")
+            # Load Azure OpenAI configuration
+            self.azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
+            self.azure_api_key = os.getenv("AZURE_OPENAI_API_KEY")
+            self.azure_api_version = os.getenv("AZURE_OPENAI_API_VERSION")
+            self.azure_embedding_deployment = os.getenv("AZURE_EMBEDDING_DEPLOYMENT", "text-embedding-ada-002")
             
-        # Configure OpenAI client for Azure
-        self.client = openai.OpenAI(
-            api_key=self.azure_api_key,
-            base_url=f"{self.azure_endpoint}/openai/deployments/{self.azure_embedding_deployment}",
-            default_query={"api-version": self.azure_api_version},
-        )
+            if not self.azure_endpoint or not self.azure_api_key:
+                logger.warning("Azure OpenAI credentials not found. Vector operations will fail.")
+                
+            # Configure OpenAI client for Azure
+            self.client = openai.OpenAI(
+                api_key=self.azure_api_key,
+                base_url=f"{self.azure_endpoint}/openai/deployments/{self.azure_embedding_deployment}",
+                default_query={"api-version": self.azure_api_version},
+            )
+            # Store model name for embedding
+            self.embedding_model = self.azure_embedding_deployment
+        else:
+            logger.info("Using direct OpenAI API for embeddings")
+            # Load OpenAI configuration
+            self.openai_api_key = os.getenv("OPENAI_API_KEY")
+            self.openai_embedding_model = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-ada-002")
+            
+            if not self.openai_api_key:
+                logger.warning("OpenAI API key not found. Vector operations will fail.")
+            
+            # Create standard OpenAI client
+            self.client = openai.OpenAI(
+                api_key=self.openai_api_key,
+            )
+            # Store model name for embedding
+            self.embedding_model = self.openai_embedding_model
         
         self.dimension = dimension
         self.index_path = index_path
@@ -50,217 +75,262 @@ class FAISSVectorStore:
         # Create directory if it doesn't exist
         os.makedirs(os.path.dirname(index_path), exist_ok=True)
         
-        # Initialize or load existing index and documents
-        if os.path.exists(f"{index_path}.index"):
-            logger.info(f"Loading existing index from {index_path}")
-            try:
-                self.index = faiss.read_index(f"{index_path}.index")
-                if not self.load(index_path):
-                    # If loading fails, create a new index
-                    logger.warning("Failed to load existing data, creating new index")
-                    self.index = faiss.IndexFlatL2(dimension)
-            except Exception as e:
-                logger.error(f"Error loading index: {str(e)}")
-                # Create new index if loading fails
-                self.index = faiss.IndexFlatL2(dimension)
-        else:
-            logger.info(f"Creating new FAISS index with dimension {dimension}")
-            self.index = faiss.IndexFlatL2(dimension)  # L2 distance
+        # Try to load existing index and documents if they exist
+        self._load_index()
     
-    def estimate_tokens(self, text):
-        """Estimate number of tokens in a text string"""
-        # OpenAI uses ~4 chars per token on average
-        return len(text) // 3  # Conservative estimate (assuming 3 chars per token)
+    def _load_index(self):
+        """Load FAISS index and document data if exists"""
+        index_file = f"{self.index_path}/faiss.index"
+        docs_file = f"{self.index_path}/documents.pkl"
         
-    async def generate_embedding(self, text: str) -> np.ndarray:
-        """Generate embedding for text using Azure OpenAI"""
-        if not text.strip():
-            return np.zeros(self.dimension, dtype=np.float32)
-            
-        # Estimate token count
-        est_tokens = self.estimate_tokens(text)
-        
-        # If text might exceed token limit, truncate it
-        if est_tokens > 8000:  # Azure OpenAI embedding models have 8192 token limit
-            logger.warning(f"Text exceeds embedding model token limit (~{est_tokens} tokens). Truncating to ~8000 tokens.")
-            # Find a good truncation point - preferably at paragraph break
-            chars_to_keep = 8000 * 3  # ~8000 tokens
-            
-            # Try to find a paragraph break near the limit
-            last_paragraph = text[:chars_to_keep].rfind('\n\n')
-            if last_paragraph > chars_to_keep * 0.8:  # If we can keep at least 80% of the text
-                truncated_text = text[:last_paragraph]
-            else:
-                # Otherwise just truncate at character limit
-                truncated_text = text[:chars_to_keep]
-                
-            # Add truncation note
-            truncated_text += "\n\n[... Content truncated due to length ...]"
-            text = truncated_text
-            
         try:
+            if os.path.exists(index_file) and os.path.exists(docs_file):
+                # Load FAISS index
+                self.index = faiss.read_index(index_file)
+                
+                # Load documents and ID map
+                with open(docs_file, 'rb') as f:
+                    data = pickle.load(f)
+                    self.documents = data.get('documents', [])
+                    self.id_map = data.get('id_map', {})
+                
+                logger.info(f"Loaded existing index with {len(self.documents)} documents")
+            else:
+                # Create new index
+                self.index = faiss.IndexFlatL2(self.dimension)
+                logger.info("Created new FAISS index")
+        except Exception as e:
+            logger.error(f"Error loading index: {str(e)}")
+            # Create new index as fallback
+            self.index = faiss.IndexFlatL2(self.dimension)
+            logger.info("Created new FAISS index due to loading error")
+    
+    async def generate_embedding(self, text: str) -> np.ndarray:
+        """Generate embedding for text using OpenAI's embedding model"""
+        try:
+            # Handle empty text
+            if not text or text.isspace():
+                logger.warning("Empty text provided for embedding. Using zeros.")
+                return np.zeros(self.dimension, dtype=np.float32)
+                
+            # Estimate token count (rough estimate - 1 token ~= 4 chars)
+            est_tokens = len(text) // 4
+            
+            # Check if text exceeds token limit
+            if est_tokens > 8000:  # OpenAI embedding models have 8192 token limit
+                logger.warning(f"Text exceeds embedding model token limit (~{est_tokens} tokens). Splitting into multiple parts.")
+                
+                # Calculate how many parts we need
+                num_parts = (est_tokens // 8000) + 1
+                chars_per_part = len(text) // num_parts
+                
+                # Split text into multiple parts
+                embeddings = []
+                for i in range(num_parts):
+                    start_idx = i * chars_per_part
+                    end_idx = min((i + 1) * chars_per_part, len(text))
+                    part_text = text[start_idx:end_idx]
+                    
+                    # Skip empty parts
+                    if not part_text or part_text.isspace():
+                        continue
+                        
+                    # Get embedding for this part
+                    response = self.client.embeddings.create(
+                        model=self.embedding_model,
+                        input=part_text
+                    )
+                    
+                    part_embedding = np.array(response.data[0].embedding, dtype=np.float32)
+                    embeddings.append(part_embedding)
+                
+                # Combine embeddings by averaging them
+                if embeddings:
+                    combined_embedding = np.mean(embeddings, axis=0)
+                    # Normalize the combined embedding
+                    norm = np.linalg.norm(combined_embedding)
+                    if norm > 0:
+                        combined_embedding = combined_embedding / norm
+                    return combined_embedding
+                else:
+                    # Fallback if something went wrong
+                    return np.zeros(self.dimension, dtype=np.float32)
+            
+            # Handle normal case (within token limit)
             response = self.client.embeddings.create(
-                model=self.azure_embedding_deployment,
+                model=self.embedding_model,
                 input=text
             )
+            
             return np.array(response.data[0].embedding, dtype=np.float32)
         except Exception as e:
             logger.error(f"Error generating embedding: {str(e)}")
             # Return zero embedding as fallback
             return np.zeros(self.dimension, dtype=np.float32)
-    
+            
     async def generate_embeddings(self, texts: List[str]) -> np.ndarray:
         """Generate embeddings for multiple texts"""
         if not texts:
-            return np.empty((0, self.dimension), dtype=np.float32)
+            return np.array([])
             
         # Use a cache to avoid re-embedding identical texts
         embedding_cache = {}
         all_embeddings = []
         
-        # Check for texts that are too long and truncate them
-        processed_texts = []
-        for text in texts:
-            # Estimate token count
-            est_tokens = self.estimate_tokens(text)
-            
-            # The embedding model has a limit of 8192 tokens
-            if est_tokens > 8000:
-                logger.warning(f"Text too long for embedding: ~{est_tokens} tokens. Truncating.")
-                # Find a good truncation point - preferably at paragraph break
-                chars_to_keep = 8000 * 3  # ~8000 tokens
-                
-                # Try to find a paragraph break near the limit
-                last_paragraph = text[:chars_to_keep].rfind('\n\n')
-                if last_paragraph > chars_to_keep * 0.8:  # If we can keep at least 80% of the text
-                    truncated_text = text[:last_paragraph]
-                else:
-                    # Otherwise just truncate at character limit
-                    truncated_text = text[:chars_to_keep]
-                    
-                # Add truncation note
-                truncated_text += "\n\n[... Content truncated due to length ...]"
-                processed_texts.append(truncated_text)
-            else:
-                processed_texts.append(text)
+        # Reusable function to estimate tokens
+        def estimate_tokens(text):
+            return len(text) // 4
         
-        # Replace original texts with processed ones
-        texts = processed_texts
-            
-        # Reduce batch size to prevent errors
-        batch_size = 16  # Further reduced from 20 to avoid rate limits and token limits
+        # Use retry mechanism for embedding generation
+        max_retries = 3
+        batch_size = 10  # Reduce batch size for stability
+        
+        # Calculate total batches for logging
         total_batches = (len(texts) + batch_size - 1) // batch_size
         
-        logger.info(f"Generating embeddings for {len(texts)} texts in {total_batches} batches")
-        
+        # Process in batches to avoid rate limits
         for i in range(0, len(texts), batch_size):
-            batch = texts[i:i+batch_size]
-            unique_texts = []
-            indices = []
+            batch_texts = texts[i:i+batch_size]
             
-            # De-duplicate texts within the batch
-            for j, text in enumerate(batch):
+            # For tracking unique texts in batch
+            unique_texts = []
+            unique_indices = []
+            
+            # Find unique texts to minimize API calls
+            for j, text in enumerate(batch_texts):
+                # Skip empty texts
+                if not text or text.isspace():
+                    logger.warning(f"Empty text at index {i+j}. Using zero embedding.")
+                    all_embeddings.append(np.zeros(self.dimension, dtype=np.float32))
+                    continue
+                    
+                # Check token count
+                est_tokens = estimate_tokens(text)
+                
+                # For very long texts, handle them individually
+                if est_tokens > 8000:
+                    logger.warning(f"Text too long for embedding: ~{est_tokens} tokens. Will process individually.")
+                    # Process long text separately
+                    emb = await self.generate_embedding(text)
+                    all_embeddings.append(emb)
+                    continue
+                
                 if text in embedding_cache:
                     # Use cached embedding
                     all_embeddings.append(embedding_cache[text])
                 else:
+                    # Mark for embedding
                     unique_texts.append(text)
-                    indices.append(j)
+                    unique_indices.append(j)
             
+            # If we have unique texts to embed
             if unique_texts:
                 retry_count = 0
-                max_retries = 5
+                
                 while retry_count < max_retries:
                     try:
-                        # Call Azure OpenAI embedding API only for unique texts
+                        # Call embedding API only for unique texts
                         logger.info(f"Batch {i//batch_size + 1}/{total_batches}: Embedding {len(unique_texts)} unique texts")
                         
-                        # Log request to Azure OpenAI Embedding API
-                        logger.info(f"Azure Embedding request: model={self.azure_embedding_deployment}, input length={len(unique_texts)}")
+                        # Log request to OpenAI Embedding API
+                        api_type = "Azure OpenAI" if self.use_azure else "OpenAI"
+                        logger.info(f"{api_type} Embedding request: model={self.embedding_model}, input length={len(unique_texts)}")
                         
                         response = self.client.embeddings.create(
-                            model=self.azure_embedding_deployment,
-                            input=unique_texts,
+                            model=self.embedding_model,
+                            input=unique_texts
                         )
                         
+                        # Log response details
                         try:
-                            logger.info(f"Azure Embedding response: model={response.model}, usage={response.usage}")
+                            logger.info(f"{api_type} Embedding response: model={response.model}, usage={response.usage}")
                         except Exception as e:
-                            logger.info(f"Azure Embedding response received but couldn't log all details: {str(e)}")
+                            logger.info(f"{api_type} Embedding response received but couldn't log all details: {str(e)}")
                         
                         # Extract embeddings from response
                         batch_embeddings = [np.array(data.embedding, dtype=np.float32) 
-                                            for data in response.data]
+                                          for data in response.data]
                         
-                        # Add to cache and results
+                        # Update cache and store embeddings
                         for text, emb in zip(unique_texts, batch_embeddings):
                             embedding_cache[text] = emb
-                            all_embeddings.append(emb)
+                            
+                        # Add embeddings in original order
+                        for j, text in enumerate(batch_texts):
+                            if j in unique_indices:
+                                # Get index in unique_texts
+                                unique_idx = unique_indices.index(j)
+                                all_embeddings.append(batch_embeddings[unique_idx])
                         
-                        # Success, break out of retry loop
+                        # Break retry loop on success
                         break
                         
                     except Exception as e:
                         retry_count += 1
                         error_msg = str(e)
                         
-                        # Check if it's a rate limit error (HTTP 429)
-                        if "429" in error_msg:
-                            # Exponential backoff
-                            wait_time = 2 ** retry_count
-                            logger.warning(f"Rate limit hit. Retrying in {wait_time} seconds...")
+                        # Handle rate limits with exponential backoff
+                        if "rate limit" in error_msg.lower():
+                            wait_time = 2 ** retry_count  # Exponential backoff
+                            logger.warning(f"Rate limit hit. Waiting {wait_time}s before retry...")
                             await asyncio.sleep(wait_time)
-                        # Check if token limit error 
-                        elif "maximum context length" in error_msg or "token" in error_msg.lower():
-                            logger.error(f"Token limit error: {error_msg}")
-                            # Try to process texts individually
-                            if len(unique_texts) > 1:
-                                logger.info("Trying to process texts individually...")
-                                for single_text in unique_texts:
-                                    try:
-                                        # Truncate if still too long
-                                        est_tokens = self.estimate_tokens(single_text)
-                                        if est_tokens > 8000:
-                                            logger.warning(f"Text too long: ~{est_tokens} tokens. Truncating further.")
-                                            single_text = single_text[:24000]  # Roughly 8000 tokens
-                                            
+                        elif "invalid" in error_msg.lower() and "input" in error_msg.lower():
+                            # Handle invalid input errors with individual embedding
+                            logger.warning("Invalid input detected. Attempting individual text embedding...")
+                            
+                            # Try to embed each text individually
+                            for j, single_text in enumerate(unique_texts):
+                                try:
+                                    # Check if text is too long
+                                    if estimate_tokens(single_text) <= 8000:
+                                        logger.info(f"Individual embedding for text {j+1}/{len(unique_texts)}")
                                         emb = await self.generate_embedding(single_text)
                                         embedding_cache[single_text] = emb
-                                        all_embeddings.append(emb)
-                                        # Small delay to avoid rate limits
-                                        await asyncio.sleep(0.5)
-                                    except Exception as inner_e:
-                                        logger.error(f"Error embedding individual text: {str(inner_e)}")
-                                        # Add zero embedding as fallback
+                                        
+                                    else:
+                                        # Single text is too long, use zero embedding
+                                        logger.error("Single text exceeds token limit. Using zero embedding.")
+                                        embedding_cache[single_text] = np.zeros(self.dimension, dtype=np.float32)
+                                        
+                                except Exception as inner_e:
+                                    logger.error(f"Error embedding individual text: {str(inner_e)}")
+                                    # Add zero embedding as fallback
+                                    embedding_cache[single_text] = np.zeros(self.dimension, dtype=np.float32)
+                            
+                            # Add embeddings in original order
+                            for j, text in enumerate(batch_texts):
+                                if j in unique_indices:
+                                    if text in embedding_cache:
+                                        all_embeddings.append(embedding_cache[text])
+                                    else:
                                         all_embeddings.append(np.zeros(self.dimension, dtype=np.float32))
-                                # Consider this batch processed
-                                break
-                            else:
-                                # Single text is too long, use zero embedding
-                                logger.error("Single text exceeds token limit. Using zero embedding.")
-                                for _ in unique_texts:
-                                    all_embeddings.append(np.zeros(self.dimension, dtype=np.float32))
-                                break
+                            
+                            # Break retry loop since we've handled individual texts
+                            break
                         else:
-                            # For other errors, retry with backoff
+                            # Other errors
                             logger.error(f"Error generating embeddings (attempt {retry_count}/{max_retries}): {error_msg}")
-                            if retry_count >= max_retries:
+                            
+                            if retry_count == max_retries:
                                 logger.error("Max retries reached. Using zero embeddings.")
                                 # Add zero embeddings for this batch as fallback
-                                for _ in unique_texts:
-                                    all_embeddings.append(np.zeros(self.dimension, dtype=np.float32))
-                            else:
-                                # Wait before retrying (with exponential backoff)
-                                wait_time = 2 ** retry_count
-                                await asyncio.sleep(wait_time)
-                
-                # Don't overwhelm the API - longer delay between batches
-                if i + batch_size < len(texts):
-                    await asyncio.sleep(1)  # Increased from 0.2 to avoid rate limits
+                                for _ in range(len(batch_texts)):
+                                    if len(all_embeddings) < i + _:  # Only add if not already added
+                                        all_embeddings.append(np.zeros(self.dimension, dtype=np.float32))
+                            
+                            # Wait before retrying
+                            await asyncio.sleep(retry_count * 2)
         
+        # Ensure we have the right number of embeddings
+        assert len(all_embeddings) <= len(texts), f"Generated {len(all_embeddings)} embeddings for {len(texts)} texts"
+        
+        # Fill any missing embeddings with zeros (shouldn't happen, but just in case)
+        while len(all_embeddings) < len(texts):
+            all_embeddings.append(np.zeros(self.dimension, dtype=np.float32))
+            
         logger.info(f"Completed embedding generation for {len(texts)} texts")
         return np.array(all_embeddings, dtype=np.float32)
-    
+
     async def add_document(self, document: Dict[str, Any]) -> str:
         """
         Add a document to the vector store

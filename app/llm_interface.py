@@ -156,28 +156,29 @@ Answer the question based on the context provided. If the answer is not containe
             completion_params = {
                 "model": self.model,
                 "messages": messages,
+                "max_completion_tokens": 2500  # Use consistently for both Azure and OpenAI
             }
             
-            if self.use_azure:
+            # Detect if we're using an Azure endpoint by checking the base_url
+            is_azure_endpoint = False
+            if hasattr(self.client, 'base_url'):
+                base_url_str = str(getattr(self.client, 'base_url', ''))
+                is_azure_endpoint = 'azure' in base_url_str.lower()
+            
+            if is_azure_endpoint or self.use_azure:
                 # Log Azure-specific details
                 logger.info(f"Using Azure deployment: {self.azure_deployment}, API version: {self.azure_api_version}")
                 logger.info(f"Request payload to Azure OpenAI: messages={messages}, max_completion_tokens=2500")
-                # Add Azure-specific parameter
-                completion_params["max_completion_tokens"] = 2500
-                # Azure doesn't support custom temperature for this model - don't set it
             else:
                 # Log OpenAI-specific details
                 logger.info(f"Using OpenAI model: {self.openai_model}")
-                logger.info(f"Request payload to OpenAI: messages={messages}, max_tokens=2500")
-                # Add OpenAI-specific parameters
-                completion_params["max_tokens"] = 2500
-                completion_params["temperature"] = 0.7
+                logger.info(f"Request payload to OpenAI: messages={messages}, max_completion_tokens=2500")
             
             # Make API call to appropriate OpenAI service with the right parameters
             response = self.client.chat.completions.create(**completion_params)
             
             # Log API response
-            api_type = "Azure OpenAI" if self.use_azure else "OpenAI"
+            api_type = "Azure OpenAI" if is_azure_endpoint or self.use_azure else "OpenAI"
             logger.info(f"{api_type} response: id={response.id}, model={response.model}, finish_reason={response.choices[0].finish_reason}, usage={response.usage}")
             
             answer = response.choices[0].message.content
