@@ -1,41 +1,39 @@
 import logging
 from typing import List
 from .document_processor import DocumentProcessor
-from .crawler import Crawler
+from .crawler import crawl_website
+import asyncio
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def discover_patterns(start_urls: List[str], max_pages: int = 2) -> DocumentProcessor:
-    """
-    Discover patterns from initial pages
-    
+async def discover_patterns(start_urls: List[str], max_pages: int = 2) -> DocumentProcessor:
+    """Discover patterns from initial pages.
+
     Args:
-        start_urls: List of URLs to start crawling from
-        max_pages: Maximum number of pages to analyze
-        
+        start_urls: List of URLs to start crawling from.
+        max_pages: Maximum number of pages to analyze in total.
+
     Returns:
-        DocumentProcessor with discovered patterns
+        Initialized ``DocumentProcessor`` with discovered patterns.
     """
-    # Initialize crawler and processor
-    crawler = Crawler()
     processor = DocumentProcessor()
-    
-    # Crawl initial pages
+
     logger.info(f"Starting pattern discovery from {len(start_urls)} URLs")
     documents = []
-    
+
     for url in start_urls:
         try:
-            # Crawl the page
-            result = crawler.crawl_page(url)
-            if result and result.get("text"):
-                documents.append(result["text"])
-                logger.info(f"Successfully crawled {url}")
-                
+            # Crawl each URL and collect the text content only
+            crawled_docs, _ = await crawl_website(url, max_pages=max_pages, incremental=False)
+            for doc in crawled_docs:
+                documents.append(doc["text"])
+                if len(documents) >= max_pages:
+                    break
+
             if len(documents) >= max_pages:
                 break
-                
+
         except Exception as e:
             logger.error(f"Error crawling {url}: {str(e)}")
             
@@ -55,8 +53,8 @@ if __name__ == "__main__":
         "https://docs.inferless.com/getting-started/introduction",
         "https://docs.inferless.com/concepts/overview"
     ]
-    
-    processor = discover_patterns(start_urls)
+
+    processor = asyncio.run(discover_patterns(start_urls))
     
     # Print discovered patterns
     patterns = processor.pattern_manager.get_patterns()
