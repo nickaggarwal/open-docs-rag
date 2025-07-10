@@ -10,6 +10,8 @@ import time
 import asyncio
 import pickle
 import json
+import re
+from bs4 import BeautifulSoup
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
@@ -18,7 +20,7 @@ logger = logging.getLogger(__name__)
 class FAISSVectorStore:
     def __init__(self, index_path="./data/faiss_index", dimension=1536):
         """
-        Initialize a vector store with FAISS for similarity search
+        Initialize a vector store with FAISS for similarity search with enhanced code block support
         
         Args:
             index_path: Base path to save/load the FAISS index
@@ -77,6 +79,314 @@ class FAISSVectorStore:
         
         # Try to load existing index and documents if they exist
         self._load_index()
+        
+        # Initialize code patterns for language detection
+        self._init_code_patterns()
+    
+    def _init_code_patterns(self):
+        """Initialize patterns for code block detection and language identification"""
+        self.code_patterns = {
+            'python': [
+                r'\bdef\s+\w+\s*\(',
+                r'\bclass\s+\w+\s*\(',
+                r'\bimport\s+\w+',
+                r'\bfrom\s+\w+\s+import',
+                r'__name__\s*==\s*["\']__main__["\']',
+                r'\bprint\s*\(',
+                r'\bif\s+__name__',
+            ],
+            'javascript': [
+                r'\bfunction\s+\w+\s*\(',
+                r'\bconst\s+\w+\s*=',
+                r'\blet\s+\w+\s*=',
+                r'\bvar\s+\w+\s*=',
+                r'\bconsole\.log\s*\(',
+                r'=>',
+                r'\brequire\s*\(',
+                r'\bmodule\.exports',
+            ],
+            'typescript': [
+                r'\binterface\s+\w+',
+                r'\btype\s+\w+\s*=',
+                r':\s*\w+\[\]',
+                r':\s*string\b',
+                r':\s*number\b',
+                r':\s*boolean\b',
+                r'\bimport\s+.*from\s+["\']',
+            ],
+            'java': [
+                r'\bpublic\s+class\s+\w+',
+                r'\bprivate\s+\w+\s+\w+',
+                r'\bpublic\s+static\s+void\s+main',
+                r'\bSystem\.out\.println',
+                r'\bpackage\s+\w+',
+                r'\bimport\s+java\.',
+            ],
+            'cpp': [
+                r'#include\s*<\w+>',
+                r'\bint\s+main\s*\(',
+                r'\bstd::\w+',
+                r'\busing\s+namespace\s+std',
+                r'\bcout\s*<<',
+                r'\bcin\s*>>',
+            ],
+            'bash': [
+                r'#!/bin/bash',
+                r'#!/bin/sh',
+                r'\$\w+',
+                r'\becho\s+',
+                r'\bif\s*\[\s*',
+                r'\bfor\s+\w+\s+in\s+',
+                r'\bchmod\s+',
+                r'\bmkdir\s+',
+            ],
+            'sql': [
+                r'\bSELECT\s+',
+                r'\bFROM\s+\w+',
+                r'\bWHERE\s+',
+                r'\bINSERT\s+INTO',
+                r'\bUPDATE\s+\w+\s+SET',
+                r'\bCREATE\s+TABLE',
+                r'\bDROP\s+TABLE',
+            ],
+            'yaml': [
+                r'^\s*\w+:\s*$',
+                r'^\s*-\s+\w+',
+                r'version:\s*["\']?\d+',
+                r'apiVersion:',
+                r'kind:',
+                r'metadata:',
+            ],
+            'json': [
+                r'^\s*{',
+                r'^\s*\[',
+                r'"\w+":\s*"',
+                r'"\w+":\s*\d+',
+                r'"\w+":\s*true|false',
+            ],
+            'dockerfile': [
+                r'^FROM\s+\w+',
+                r'^RUN\s+',
+                r'^COPY\s+',
+                r'^ADD\s+',
+                r'^WORKDIR\s+',
+                r'^EXPOSE\s+',
+                r'^CMD\s+',
+                r'^ENTRYPOINT\s+',
+            ],
+            'html': [
+                r'<html',
+                r'<head>',
+                r'<body>',
+                r'<div\s+',
+                r'<span\s+',
+                r'<p>',
+                r'<!DOCTYPE\s+html',
+            ],
+            'css': [
+                r'\.\w+\s*{',
+                r'#\w+\s*{',
+                r'\w+:\s*\w+;',
+                r'@media\s+',
+                r'@import\s+',
+                r'color:\s*#\w+',
+            ],
+        }
+    
+    def _detect_programming_language(self, code_text: str) -> str:
+        """
+        Detect the programming language of a code block
+        
+        Args:
+            code_text: The code text to analyze
+            
+        Returns:
+            Detected language or 'unknown' if not detected
+        """
+        if not code_text.strip():
+            return 'unknown'
+        
+        language_scores = {}
+        
+        for language, patterns in self.code_patterns.items():
+            score = 0
+            for pattern in patterns:
+                matches = len(re.findall(pattern, code_text, re.MULTILINE | re.IGNORECASE))
+                score += matches
+            
+            if score > 0:
+                language_scores[language] = score
+        
+        if language_scores:
+            # Return language with highest score
+            return max(language_scores.items(), key=lambda x: x[1])[0]
+        
+        return 'unknown'
+    
+    def _extract_code_blocks(self, text: str) -> List[Dict[str, Any]]:
+        """
+        Extract code blocks from text with improved detection
+        
+        Args:
+            text: Text to extract code blocks from
+            
+        Returns:
+            List of code block dictionaries with metadata
+        """
+        code_blocks = []
+        
+        # Pattern 1: Markdown code blocks with language specification
+        markdown_pattern = r'```(\w+)?\n(.*?)\n```'
+        for match in re.finditer(markdown_pattern, text, re.DOTALL):
+            language = match.group(1) or 'unknown'
+            code_content = match.group(2).strip()
+            
+            if code_content:
+                # If no language specified, try to detect it
+                if language == 'unknown':
+                    language = self._detect_programming_language(code_content)
+                
+                code_blocks.append({
+                    'content': code_content,
+                    'language': language,
+                    'type': 'markdown_code_block',
+                    'start_pos': match.start(),
+                    'end_pos': match.end()
+                })
+        
+        # Pattern 2: HTML pre/code tags
+        soup = BeautifulSoup(text, 'html.parser')
+        for pre_tag in soup.find_all('pre'):
+            code_content = pre_tag.get_text().strip()
+            if code_content:
+                # Check for language class
+                language = 'unknown'
+                if pre_tag.get('class'):
+                    for cls in pre_tag.get('class'):
+                        if cls.startswith('language-'):
+                            language = cls.replace('language-', '')
+                            break
+                        elif cls.startswith('lang-'):
+                            language = cls.replace('lang-', '')
+                            break
+                
+                if language == 'unknown':
+                    language = self._detect_programming_language(code_content)
+                
+                code_blocks.append({
+                    'content': code_content,
+                    'language': language,
+                    'type': 'html_pre_block',
+                    'start_pos': 0,  # Approximate for HTML
+                    'end_pos': len(code_content)
+                })
+        
+        # Pattern 3: Indented code blocks (4+ spaces or tabs)
+        indented_pattern = r'^((?:    |\t).+(?:\n(?:    |\t).*)*)$'
+        for match in re.finditer(indented_pattern, text, re.MULTILINE):
+            code_content = match.group(1).strip()
+            if code_content and len(code_content.split('\n')) >= 2:  # At least 2 lines
+                # Remove indentation
+                lines = code_content.split('\n')
+                min_indent = min(len(line) - len(line.lstrip()) for line in lines if line.strip())
+                cleaned_lines = [line[min_indent:] for line in lines]
+                cleaned_content = '\n'.join(cleaned_lines)
+                
+                language = self._detect_programming_language(cleaned_content)
+                
+                code_blocks.append({
+                    'content': cleaned_content,
+                    'language': language,
+                    'type': 'indented_code_block',
+                    'start_pos': match.start(),
+                    'end_pos': match.end()
+                })
+        
+        return code_blocks
+    
+    def _enhance_document_with_code_blocks(self, document: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Enhance document by extracting and processing code blocks separately
+        
+        Args:
+            document: Original document with text and metadata
+            
+        Returns:
+            List of enhanced document chunks including separate code block documents
+        """
+        text = document.get("text", "")
+        metadata = document.get("metadata", {})
+        
+        # Extract code blocks
+        code_blocks = self._extract_code_blocks(text)
+        
+        enhanced_docs = []
+        
+        # Create main document (with code blocks marked but not removed)
+        main_doc = {
+            "text": text,
+            "metadata": {
+                **metadata,
+                "content_type": "mixed",
+                "has_code_blocks": len(code_blocks) > 0,
+                "code_block_count": len(code_blocks)
+            }
+        }
+        enhanced_docs.append(main_doc)
+        
+        # Create separate documents for each code block
+        for i, code_block in enumerate(code_blocks):
+            # Create context by extracting surrounding text
+            context_before = ""
+            context_after = ""
+            
+            if code_block['start_pos'] > 0:
+                # Get up to 200 characters before the code block
+                start_context = max(0, code_block['start_pos'] - 200)
+                context_before = text[start_context:code_block['start_pos']].strip()
+                if context_before:
+                    # Try to get complete sentences
+                    sentences = context_before.split('.')
+                    if len(sentences) > 1:
+                        context_before = '.'.join(sentences[-2:]).strip()
+            
+            if code_block['end_pos'] < len(text):
+                # Get up to 200 characters after the code block
+                end_context = min(len(text), code_block['end_pos'] + 200)
+                context_after = text[code_block['end_pos']:end_context].strip()
+                if context_after:
+                    # Try to get complete sentences
+                    sentences = context_after.split('.')
+                    if len(sentences) > 1:
+                        context_after = '.'.join(sentences[:2]).strip()
+            
+            # Create enhanced text for code block embedding
+            enhanced_code_text = f"""
+Context before: {context_before}
+
+Code ({code_block['language']}):
+{code_block['content']}
+
+Context after: {context_after}
+            """.strip()
+            
+            code_doc = {
+                "text": enhanced_code_text,
+                "metadata": {
+                    **metadata,
+                    "content_type": "code_block",
+                    "programming_language": code_block['language'],
+                    "code_block_type": code_block['type'],
+                    "code_block_index": i,
+                    "raw_code": code_block['content'],
+                    "context_before": context_before,
+                    "context_after": context_after,
+                    "is_code_block": True
+                }
+            }
+            enhanced_docs.append(code_doc)
+        
+        return enhanced_docs
     
     def _load_index(self):
         """Load FAISS index and document data if exists"""
@@ -361,7 +671,7 @@ class FAISSVectorStore:
 
     async def add_document(self, document: Dict[str, Any]) -> str:
         """
-        Add a document to the vector store
+        Add a document to the vector store with enhanced code block processing
         
         Args:
             document: Document with text to embed and metadata
@@ -385,45 +695,64 @@ class FAISSVectorStore:
                 doc_id = f"{base_id}_{uuid.uuid4().hex[:8]}"
         
         try:
-            # Generate embedding
-            embedding = await self.generate_embedding(text)
+            # Enhance document with code block processing
+            enhanced_docs = self._enhance_document_with_code_blocks(document)
             
-            # Log embedding request details
-            logger.info(f"Generated embedding for document ID: {doc_id}, text length: {len(text)} characters")
-            
-            # Add to index
-            faiss_id = len(self.documents)
-            self.index.add(np.array([embedding], dtype=np.float32))
-            
-            # Store document with metadata
-            self.documents.append({
-                "text": text,
-                "metadata": metadata,
-                "id": doc_id
-            })
-            
-            # Map external ID to index
-            self.id_map[doc_id] = faiss_id
+            added_ids = []
+            for i, enhanced_doc in enumerate(enhanced_docs):
+                # Create unique ID for each enhanced document
+                if i == 0:
+                    # Main document keeps the original ID
+                    enhanced_doc_id = doc_id
+                else:
+                    # Code block documents get suffixed IDs
+                    enhanced_doc_id = f"{doc_id}_code_block_{i-1}"
+                
+                # Generate embedding
+                embedding = await self.generate_embedding(enhanced_doc["text"])
+                
+                # Log embedding request details
+                content_type = enhanced_doc["metadata"].get("content_type", "mixed")
+                language = enhanced_doc["metadata"].get("programming_language", "N/A")
+                logger.info(f"Generated embedding for document ID: {enhanced_doc_id}, "
+                           f"type: {content_type}, language: {language}, "
+                           f"text length: {len(enhanced_doc['text'])} characters")
+                
+                # Add to index
+                faiss_id = len(self.documents)
+                self.index.add(np.array([embedding], dtype=np.float32))
+                
+                # Store document with metadata
+                self.documents.append({
+                    "text": enhanced_doc["text"],
+                    "metadata": enhanced_doc["metadata"],
+                    "id": enhanced_doc_id
+                })
+                
+                # Map external ID to index
+                self.id_map[enhanced_doc_id] = faiss_id
+                added_ids.append(enhanced_doc_id)
             
             # Save periodically (every 100 documents)
             if len(self.documents) % 100 == 0:
                 self.save(self.index_path)
                 
-            logger.info(f"Added document with ID {doc_id}")
-            return doc_id
+            logger.info(f"Added document with {len(enhanced_docs)} chunks (main + {len(enhanced_docs)-1} code blocks)")
+            return doc_id  # Return the main document ID
+            
         except Exception as e:
             logger.error(f"Error adding document: {str(e)}")
             raise
     
     async def add_documents(self, documents: List[Dict[str, Any]]) -> List[str]:
         """
-        Add multiple documents to the vector store
+        Add multiple documents to the vector store with enhanced code block processing
         
         Args:
             documents: List of documents to add
             
         Returns:
-            List of IDs for added documents
+            List of IDs for added documents (main document IDs only)
         """
         if not documents:
             return []
@@ -435,59 +764,82 @@ class FAISSVectorStore:
         # Initialize id_map if it doesn't exist
         if not hasattr(self, 'id_map'):
             self.id_map = {}
-            
-        # Generate unique IDs for all documents
-        doc_ids = []
-        for doc in documents:
-            metadata = doc.get("metadata", {})
-            if "id" in doc:
-                doc_id = doc["id"]
-            else:
-                base_id = metadata.get("url", "")
-                if not base_id:
-                    doc_id = str(uuid.uuid4())
-                else:
-                    doc_id = f"{base_id}_{uuid.uuid4().hex[:8]}"
-            doc_ids.append(doc_id)
         
         try:
-            # Generate embeddings for all documents
-            texts = [doc.get("text", "") for doc in documents]
+            # Process all documents with code block enhancement
+            all_enhanced_docs = []
+            main_doc_ids = []
+            
+            for doc in documents:
+                metadata = doc.get("metadata", {})
+                if "id" in doc:
+                    doc_id = doc["id"]
+                else:
+                    base_id = metadata.get("url", "")
+                    if not base_id:
+                        doc_id = str(uuid.uuid4())
+                    else:
+                        doc_id = f"{base_id}_{uuid.uuid4().hex[:8]}"
+                
+                main_doc_ids.append(doc_id)
+                
+                # Enhance document with code block processing
+                enhanced_docs = self._enhance_document_with_code_blocks(doc)
+                
+                # Add enhanced document IDs
+                for i, enhanced_doc in enumerate(enhanced_docs):
+                    if i == 0:
+                        # Main document keeps the original ID
+                        enhanced_doc_id = doc_id
+                    else:
+                        # Code block documents get suffixed IDs
+                        enhanced_doc_id = f"{doc_id}_code_block_{i-1}"
+                    
+                    enhanced_doc["id"] = enhanced_doc_id
+                    all_enhanced_docs.append(enhanced_doc)
+            
+            # Generate embeddings for all enhanced documents
+            texts = [doc["text"] for doc in all_enhanced_docs]
             embeddings = await self.generate_embeddings(texts)
             
             # Add to index
             start_idx = len(self.documents)
             self.index.add(embeddings)
             
-            # Store documents with metadata
-            for i, (doc, doc_id) in enumerate(zip(documents, doc_ids)):
+            # Store enhanced documents with metadata
+            for i, enhanced_doc in enumerate(all_enhanced_docs):
                 # Map external ID to index
                 faiss_id = start_idx + i
-                self.id_map[doc_id] = faiss_id
+                self.id_map[enhanced_doc["id"]] = faiss_id
                 
                 # Store document
                 self.documents.append({
-                    "text": doc.get("text", ""),
-                    "metadata": doc.get("metadata", {}),
-                    "id": doc_id
+                    "text": enhanced_doc["text"],
+                    "metadata": enhanced_doc["metadata"],
+                    "id": enhanced_doc["id"]
                 })
             
             # Save the index
             self.save(self.index_path)
             
-            logger.info(f"Added {len(documents)} documents to FAISS")
-            return doc_ids
+            total_code_blocks = len(all_enhanced_docs) - len(documents)
+            logger.info(f"Added {len(documents)} documents with {total_code_blocks} code blocks to FAISS")
+            logger.info(f"Total enhanced documents: {len(all_enhanced_docs)}")
+            
+            return main_doc_ids
+            
         except Exception as e:
             logger.error(f"Error adding documents: {str(e)}")
             raise
     
-    async def search(self, query: str, k: int = 5) -> List[Dict[str, Any]]:
+    async def search(self, query: str, k: int = 5, code_focused: Optional[bool] = None) -> List[Dict[str, Any]]:
         """
-        Search for similar documents
+        Search for similar documents with enhanced code block support
         
         Args:
             query: Query string
             k: Number of results to return
+            code_focused: If True, prioritize code blocks; if False, prioritize text; if None, auto-detect
             
         Returns:
             List of document dictionaries with similarity scores
@@ -504,11 +856,15 @@ class FAISSVectorStore:
             return []
             
         try:
+            # Auto-detect if query is code-focused
+            if code_focused is None:
+                code_focused = self._is_code_query(query)
+            
             # Generate query embedding
             query_embedding = await self.generate_embedding(query)
             
             # Search the index - retrieve more results than needed for re-ranking
-            retrieval_k = min(k * 3, len(self.documents))  # Retrieve 3x more for re-ranking
+            retrieval_k = min(k * 4, len(self.documents))  # Retrieve 4x more for re-ranking
             distances, indices = self.index.search(
                 np.array([query_embedding], dtype=np.float32), k=retrieval_k
             )
@@ -527,7 +883,7 @@ class FAISSVectorStore:
             if not initial_results:
                 return []
                 
-            # Re-rank results based on document structure
+            # Re-rank results with enhanced scoring
             weighted_results = []
             for doc in initial_results:
                 # Start with the embedding score
@@ -536,36 +892,76 @@ class FAISSVectorStore:
                 # Extract text and metadata
                 text = doc["text"]
                 metadata = doc.get("metadata", {})
+                content_type = metadata.get("content_type", "mixed")
                 
-                # Weight 1: Boost documents with matching headings
+                # Code-focused search enhancements
+                if code_focused:
+                    # Boost code blocks significantly
+                    if content_type == "code_block":
+                        final_score += 0.4
+                        
+                        # Additional boost for matching programming language
+                        prog_lang = metadata.get("programming_language", "")
+                        if prog_lang and prog_lang.lower() in query.lower():
+                            final_score += 0.2
+                    
+                    # Slight boost for documents with code blocks
+                    elif metadata.get("has_code_blocks", False):
+                        final_score += 0.1
+                        
+                else:
+                    # Text-focused search: slight penalty for code blocks
+                    if content_type == "code_block":
+                        final_score -= 0.1
+                    # Boost for mixed content
+                    elif content_type == "mixed":
+                        final_score += 0.05
+                
+                # Enhanced keyword matching
+                query_terms = [term.lower() for term in query.split() if len(term) > 2]
+                text_lower = text.lower()
+                
+                # Count exact matches
+                exact_matches = sum(1 for term in query_terms if term in text_lower)
+                if exact_matches > 0:
+                    match_boost = min(0.3, exact_matches * 0.05)
+                    final_score += match_boost
+                
+                # Special handling for code blocks
+                if content_type == "code_block":
+                    raw_code = metadata.get("raw_code", "")
+                    if raw_code:
+                        # Boost for function/class name matches in code
+                        code_matches = sum(1 for term in query_terms if term in raw_code.lower())
+                        if code_matches > 0:
+                            final_score += min(0.25, code_matches * 0.08)
+                
+                # Weight for document structure
                 heading = metadata.get("heading", "")
                 if heading:
                     # Check if any query terms appear in the heading
-                    query_terms = [term.lower() for term in query.split() if len(term) > 3]
                     heading_lower = heading.lower()
                     heading_match_count = sum(1 for term in query_terms if term in heading_lower)
-                    # Apply heading boost (0.1 per matching term)
-                    heading_boost = min(0.3, heading_match_count * 0.1)
+                    # Apply heading boost
+                    heading_boost = min(0.25, heading_match_count * 0.08)
                     final_score += heading_boost
                 
-                # Weight 2: Boost priority to the first paragraph
-                paragraphs = text.split('\n\n')
-                if paragraphs:
-                    first_para = paragraphs[0]
-                    # Check if any query terms appear in the first paragraph
-                    query_terms = [term.lower() for term in query.split() if len(term) > 3]
-                    first_para_lower = first_para.lower()
-                    first_para_match_count = sum(1 for term in query_terms if term in first_para_lower)
-                    # Apply first paragraph boost (0.05 per matching term)
-                    first_para_boost = min(0.2, first_para_match_count * 0.05)
-                    final_score += first_para_boost
-                
-                # Apply level boost for headings with higher hierarchy (H1, H2)
+                # Level boost for headings with higher hierarchy
                 level = metadata.get("level", 0)
                 if level > 0:
                     # Level 1 (H1) gets highest boost, decreasing for H2, H3, etc.
-                    level_boost = max(0, 0.15 - ((level - 1) * 0.05))
+                    level_boost = max(0, 0.1 - ((level - 1) * 0.03))
                     final_score += level_boost
+                
+                # Context relevance for code blocks
+                if content_type == "code_block":
+                    context_before = metadata.get("context_before", "")
+                    context_after = metadata.get("context_after", "")
+                    context_text = f"{context_before} {context_after}".lower()
+                    
+                    context_matches = sum(1 for term in query_terms if term in context_text)
+                    if context_matches > 0:
+                        final_score += min(0.15, context_matches * 0.05)
                 
                 # Remove the embedding_score from the final document
                 doc.pop("embedding_score", None)
@@ -573,15 +969,88 @@ class FAISSVectorStore:
                 doc["score"] = min(1.0, final_score)  # Cap at 1.0
                 weighted_results.append(doc)
             
+            # Group results by main document ID to avoid too many code blocks from same source
+            grouped_results = {}
+            for doc in weighted_results:
+                doc_id = doc["id"]
+                main_id = doc_id.split("_code_block_")[0]  # Get main document ID
+                
+                if main_id not in grouped_results:
+                    grouped_results[main_id] = []
+                grouped_results[main_id].append(doc)
+            
+            # Select best result from each group and flatten
+            final_results = []
+            for main_id, docs in grouped_results.items():
+                # Sort docs by score and take the best one
+                docs.sort(key=lambda x: x["score"], reverse=True)
+                
+                # If code-focused, prefer code blocks; otherwise prefer mixed content
+                if code_focused:
+                    # Prefer code blocks, but ensure we have the best scoring one
+                    final_results.append(docs[0])
+                else:
+                    # Prefer mixed content, fall back to code blocks
+                    mixed_docs = [d for d in docs if d["metadata"].get("content_type") == "mixed"]
+                    if mixed_docs:
+                        final_results.append(mixed_docs[0])
+                    else:
+                        final_results.append(docs[0])
+            
             # Sort by final score and take top k
-            weighted_results.sort(key=lambda x: x["score"], reverse=True)
-            return weighted_results[:k]
+            final_results.sort(key=lambda x: x["score"], reverse=True)
+            
+            logger.info(f"Search completed: query='{query}', code_focused={code_focused}, "
+                       f"initial_results={len(initial_results)}, final_results={len(final_results[:k])}")
+            
+            return final_results[:k]
             
         except Exception as e:
             logger.error(f"Error searching: {str(e)}")
             import traceback
             logger.error(f"Complete search error: {traceback.format_exc()}")
             return []
+    
+    def _is_code_query(self, query: str) -> bool:
+        """
+        Determine if a query is focused on code/programming concepts
+        
+        Args:
+            query: Search query
+            
+        Returns:
+            True if query appears to be code-focused
+        """
+        code_keywords = [
+            'function', 'method', 'class', 'variable', 'import', 'export',
+            'def', 'return', 'if', 'else', 'for', 'while', 'try', 'catch',
+            'code', 'example', 'snippet', 'implementation', 'syntax',
+            'python', 'javascript', 'typescript', 'java', 'cpp', 'c++',
+            'bash', 'sql', 'html', 'css', 'yaml', 'json', 'dockerfile',
+            'api', 'endpoint', 'parameter', 'argument', 'callback',
+            'async', 'await', 'promise', 'lambda', 'arrow function'
+        ]
+        
+        query_lower = query.lower()
+        
+        # Check for programming language mentions
+        for language in self.code_patterns.keys():
+            if language in query_lower:
+                return True
+        
+        # Check for code-related keywords
+        code_keyword_count = sum(1 for keyword in code_keywords if keyword in query_lower)
+        
+        # If more than 20% of words are code-related, consider it code-focused
+        total_words = len(query.split())
+        if total_words > 0 and (code_keyword_count / total_words) > 0.2:
+            return True
+        
+        # Check for code-like patterns
+        if re.search(r'[(){}\[\]<>]', query) or '.' in query or '_' in query:
+            return True
+        
+        return False
     
     async def remove_documents_by_domain(self, domain: str) -> int:
         """
