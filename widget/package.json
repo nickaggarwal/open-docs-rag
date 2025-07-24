@@ -1,7 +1,7 @@
 {
   "name": "open-docs-rag-widget",
   "version": "1.0.0",
-  "description": "A customizable AI-powered documentation widget similar to kapa.ai",
+  "description": "A customizable AI-powered documentation widget",
   "main": "dist/index.js",
   "module": "dist/index.esm.js",
   "types": "dist/index.d.ts",
@@ -27,7 +27,7 @@
     "chat",
     "support"
   ],
-  "author": "Your Name",
+  "author": "Naveen Pandurangi",
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^20.0.0",
