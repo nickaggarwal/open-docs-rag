@@ -4,9 +4,33 @@ import { WidgetConfig } from './types';
  * Extracts configuration from data attributes on the script tag
  */
 export function parseConfigFromScript(): WidgetConfig | null {
-  const scripts = document.querySelectorAll('script[src*="open-docs-rag-widget"]');
+  console.log('Looking for widget script tag...');
+
+  // Try multiple selectors to find the widget script
+  let scripts = document.querySelectorAll('script[src*="open-docs-rag-widget"]');
+  console.log('Scripts with open-docs-rag-widget:', scripts.length);
+
+  // Fallback: look for script with data-website-id (our required attribute)
   if (scripts.length === 0) {
-    console.warn('OpenDocsRAGWidget: No script tag found');
+    scripts = document.querySelectorAll('script[data-website-id]');
+    console.log('Scripts with data-website-id:', scripts.length);
+  }
+
+  // Debug: log all script tags
+  if (scripts.length === 0) {
+    const allScripts = document.querySelectorAll('script');
+    console.log('All script tags found:', allScripts.length);
+    allScripts.forEach((script, index) => {
+      console.log(`Script ${index}:`, {
+        src: (script as HTMLScriptElement).src,
+        hasDatasetWebsiteId: !!(script as HTMLScriptElement).dataset.websiteId,
+        dataset: (script as HTMLScriptElement).dataset
+      });
+    });
+  }
+
+  if (scripts.length === 0) {
+    console.warn('OpenDocsRAGWidget: No script tag found with open-docs-rag-widget src or data-website-id');
     return null;
   }
 
@@ -100,5 +124,5 @@ export const defaultConfig: Partial<WidgetConfig> = {
   exampleQuestionButtonHeight: '100%',
   exampleQuestionButtonWidth: '100%',
   fontFamily: '-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif',
-  apiEndpoint: '/api/chat'
+  apiEndpoint: 'http://100.28.126.254:8000/question'
 };

@@ -10,8 +10,6 @@ module.exports = (env, argv) => {
     output: {
       path: path.resolve(__dirname, 'dist'),
       filename: 'open-docs-rag-widget.bundle.js',
-      library: 'OpenDocsRAGWidget',
-      libraryTarget: 'umd',
       clean: true
     },
     resolve: {
@@ -40,8 +38,8 @@ module.exports = (env, argv) => {
         : []),
       new HtmlWebpackPlugin({
         template: './src/example.html',
-        filename: 'example.html',
-        inject: 'body'
+        filename: 'index.html',
+        inject: false // Don't auto-inject, let the manual script tag handle it
       })
     ],
     devServer: {
@@ -50,7 +48,10 @@ module.exports = (env, argv) => {
       },
       compress: true,
       port: 3000,
-      open: true
+      open: true,
+      historyApiFallback: {
+        index: '/index.html'
+      }
     },
     optimization: {
       minimize: isProduction

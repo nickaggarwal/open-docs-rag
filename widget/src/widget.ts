@@ -251,8 +251,8 @@ export class OpenDocsRAGWidget implements WidgetInstance {
         ...(this.config.apiKey && { Authorization: `Bearer ${this.config.apiKey}` })
       },
       body: JSON.stringify({
-        message,
-        websiteId: this.config.websiteId
+        question: message,
+        num_results: 3
       })
     });
 
@@ -260,7 +260,13 @@ export class OpenDocsRAGWidget implements WidgetInstance {
       throw new Error(`API call failed: ${response.status}`);
     }
 
-    return response.json();
+    const result = await response.json();
+
+    // Transform the response to match our expected format
+    return {
+      message: result.answer || result.response || result.message || 'No response from API',
+      sources: result.sources || result.references || []
+    };
   }
 
   private renderMessages(): void {

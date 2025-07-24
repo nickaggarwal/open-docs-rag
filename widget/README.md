@@ -113,8 +113,8 @@ The widget expects your API endpoint to:
 
 ```json
 {
-  "message": "User's question",
-  "websiteId": "your-website-id"
+  "question": "User's question",
+  "num_results": 3
 }
 ```
 
@@ -122,10 +122,12 @@ The widget expects your API endpoint to:
 
 ```json
 {
-  "message": "AI response",
+  "answer": "AI response",
   "sources": ["optional", "array", "of", "source", "urls"]
 }
 ```
+
+Note: The widget will also accept responses with `message` or `response` fields as alternatives to `answer`.
 
 ## Advanced Usage
 
