@@ -1,0 +1,364 @@
+/* Open Docs RAG Widget Styles */
+
+/* Container */
+.open-docs-rag-widget-container {
+  position: fixed;
+  z-index: 9999;
+  bottom: 20px;
+  right: 20px;
+}
+
+/* Button */
+.open-docs-rag-widget-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: none;
+  border-radius: 50px;
+  background-color: #007bff;
+  color: white;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  transition: all 0.2s ease;
+  font-weight: 500;
+  padding: 0 16px;
+}
+
+.open-docs-rag-widget-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+}
+
+.open-docs-rag-widget-button img {
+  border-radius: 4px;
+}
+
+/* Modal */
+.open-docs-rag-widget-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+}
+
+.open-docs-rag-widget-modal-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+}
+
+.open-docs-rag-widget-modal-content {
+  position: relative;
+  width: 90%;
+  max-width: 600px;
+  max-height: 80vh;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Modal Header */
+.open-docs-rag-widget-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px;
+  border-bottom: 1px solid #e9ecef;
+  background-color: #f8f9fa;
+}
+
+.open-docs-rag-widget-modal-header-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.open-docs-rag-widget-modal-logo {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+}
+
+.open-docs-rag-widget-modal-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #212529;
+}
+
+.open-docs-rag-widget-modal-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #6c757d;
+  padding: 4px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.open-docs-rag-widget-modal-close:hover {
+  background-color: #e9ecef;
+  color: #495057;
+}
+
+/* Modal Disclaimer */
+.open-docs-rag-widget-modal-disclaimer {
+  padding: 12px 20px;
+  background-color: #f1fdd2;
+  border-bottom: 1px solid #e9ecef;
+  font-size: 14px;
+  color: #495057;
+  line-height: 1.4;
+}
+
+/* Modal Body */
+.open-docs-rag-widget-modal-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.open-docs-rag-widget-chat-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+  gap: 16px;
+  overflow: hidden;
+}
+
+/* Chat Messages */
+.open-docs-rag-widget-chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-right: 4px;
+  max-height: 400px;
+}
+
+.open-docs-rag-widget-chat-messages::-webkit-scrollbar {
+  width: 6px;
+}
+
+.open-docs-rag-widget-chat-messages::-webkit-scrollbar-track {
+  background: #f1f3f4;
+  border-radius: 3px;
+}
+
+.open-docs-rag-widget-chat-messages::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 3px;
+}
+
+.open-docs-rag-widget-chat-messages::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}
+
+/* Message Styles */
+.open-docs-rag-widget-message {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.open-docs-rag-widget-message--user {
+  align-items: flex-end;
+}
+
+.open-docs-rag-widget-message--assistant {
+  align-items: flex-start;
+}
+
+.open-docs-rag-widget-message-content {
+  max-width: 80%;
+  padding: 12px 16px;
+  border-radius: 16px;
+  line-height: 1.4;
+  word-wrap: break-word;
+}
+
+.open-docs-rag-widget-message--user .open-docs-rag-widget-message-content {
+  background-color: #007bff;
+  color: white;
+  border-bottom-right-radius: 4px;
+}
+
+.open-docs-rag-widget-message--assistant .open-docs-rag-widget-message-content {
+  background-color: #f8f9fa;
+  color: #212529;
+  border-bottom-left-radius: 4px;
+  border: 1px solid #e9ecef;
+}
+
+.open-docs-rag-widget-message-sources {
+  font-size: 12px;
+  color: #6c757d;
+  margin-top: 4px;
+}
+
+.open-docs-rag-widget-message-sources a {
+  color: #007bff;
+  text-decoration: none;
+}
+
+.open-docs-rag-widget-message-sources a:hover {
+  text-decoration: underline;
+}
+
+/* Example Questions */
+.open-docs-rag-widget-example-questions {
+  margin-bottom: 16px;
+}
+
+.open-docs-rag-widget-example-questions-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #495057;
+  margin: 0 0 12px 0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.open-docs-rag-widget-example-questions-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 8px;
+}
+
+.open-docs-rag-widget-example-question-btn {
+  background: white;
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+  padding: 12px 16px;
+  font-size: 14px;
+  color: #495057;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.2s ease;
+  line-height: 1.4;
+}
+
+.open-docs-rag-widget-example-question-btn:hover {
+  background-color: #f8f9fa;
+  border-color: #adb5bd;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* Input Container */
+.open-docs-rag-widget-input-container {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 12px;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  border: 1px solid #e9ecef;
+}
+
+.open-docs-rag-widget-input {
+  flex: 1;
+  border: none;
+  background: none;
+  outline: none;
+  font-size: 14px;
+  color: #212529;
+  padding: 8px 0;
+}
+
+.open-docs-rag-widget-input::placeholder {
+  color: #6c757d;
+}
+
+.open-docs-rag-widget-send-button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #6c757d;
+  padding: 8px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.open-docs-rag-widget-send-button:hover {
+  background-color: #e9ecef;
+  color: #495057;
+}
+
+.open-docs-rag-widget-send-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Mobile Responsiveness */
+@media (max-width: 768px) {
+  .open-docs-rag-widget-modal-content {
+    width: 95%;
+    max-height: 90vh;
+    margin: 20px;
+  }
+
+  .open-docs-rag-widget-example-questions-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .open-docs-rag-widget-chat-messages {
+    max-height: 300px;
+  }
+
+  .open-docs-rag-widget-modal-header {
+    padding: 16px;
+  }
+
+  .open-docs-rag-widget-chat-container {
+    padding: 16px;
+  }
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.open-docs-rag-widget-modal {
+  animation: fadeIn 0.2s ease-out;
+}
+
+/* Focus states for accessibility */
+.open-docs-rag-widget-button:focus,
+.open-docs-rag-widget-example-question-btn:focus,
+.open-docs-rag-widget-send-button:focus,
+.open-docs-rag-widget-modal-close:focus {
+  outline: 2px solid #007bff;
+  outline-offset: 2px;
+}
+
+.open-docs-rag-widget-input:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+}
