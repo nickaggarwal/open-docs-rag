@@ -135,11 +135,8 @@ Answer the question based on the context provided. If the answer is not containe
                 if heading:
                     title = f"{title} - {heading}"
             
-            # Truncate text for context
-            if len(text) > 500:
-                text = text[:500] + "..."
-            
-            context_parts.append(f"Source {i+1} ({title}): {text}")
+            # Add to context - include metadata that might help LLM understand importance
+            context_parts.append(f"Document {i+1} (Source: {title}):\n{text}\n")
             
             # Add unique sources
             if source and source not in sources:
