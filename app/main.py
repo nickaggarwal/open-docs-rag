@@ -2,7 +2,7 @@ import os
 import logging
 import json
 from typing import List, Dict, Any, Optional
-from fastapi import FastAPI, BackgroundTasks, HTTPException, Depends, Query
+from fastapi import FastAPI, BackgroundTasks, HTTPException, Depends, Query, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -68,6 +68,43 @@ vector_store = FAISSVectorStore(index_path="./data/faiss_index/index")
 document_processor = DocumentProcessor()
 database = Database()
 
+# Authentication dependency
+async def verify_token(authorization: str = Header(None)):
+    """
+    Verify the authorization token if AUTH_TOKEN environment variable is set.
+    If AUTH_TOKEN is not set, authentication is skipped.
+    """
+    required_token = os.getenv("AUTH_TOKEN")
+    
+    # If no token is configured, skip authentication
+    if not required_token:
+        return True
+    
+    # Check if authorization header is provided
+    if not authorization:
+        raise HTTPException(
+            status_code=401,
+            detail="Authorization header is required"
+        )
+    
+    # Extract token from "Bearer <token>" format
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=401,
+            detail="Authorization header must be in format 'Bearer <token>'"
+        )
+    
+    token = authorization[7:]  # Remove "Bearer " prefix
+    
+    # Verify token
+    if token != required_token:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or expired token"
+        )
+    
+    return True
+
 # Pydantic models for request/response validation
 class CrawlRequest(BaseModel):
     url: str
@@ -126,7 +163,7 @@ async def root():
     }
 
 @app.post("/crawl")
-async def start_crawl(req: CrawlRequest) -> Dict[str, Any]:
+async def start_crawl(req: CrawlRequest, _: bool = Depends(verify_token)) -> Dict[str, Any]:
     """
     Start a crawl job for a documentation site
     
@@ -233,7 +270,7 @@ async def get_job_status(job_id: str):
     }
 
 @app.post("/question")
-async def ask_question(request: QuestionRequest):
+async def ask_question(request: QuestionRequest, _: bool = Depends(verify_token)):
     """
     Ask a question and get a streaming answer using Server-Sent Events (SSE)
     """

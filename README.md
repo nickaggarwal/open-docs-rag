@@ -159,10 +159,32 @@ python test_rag_app.py
 
 ```
 
+## Authentication
+
+The API supports optional token-based authentication for `/crawl` and `/question` endpoints:
+
+- **Authentication is OPTIONAL** - Set the `AUTH_TOKEN` environment variable to enable it
+- **If `AUTH_TOKEN` is not set** - All endpoints work without authentication
+- **If `AUTH_TOKEN` is set** - Protected endpoints require `Authorization: Bearer <token>` header
+
+```bash
+# Enable authentication
+export AUTH_TOKEN="your-secret-token"
+
+# Make authenticated requests
+curl -X POST "http://localhost:8000/crawl" \
+  -H "Authorization: Bearer your-secret-token" \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://example.com/docs", "max_pages": 100}'
+```
+
+**Protected Endpoints:** `/crawl`, `/question`  
+**Unprotected Endpoints:** `/`, `/job-status/{job_id}`, `/add-qa`, `/history`
+
 ## API Endpoints
 
 - **GET /** - Welcome page with endpoint descriptions
-- **POST /crawl** - Crawl a documentation site
+- **POST /crawl** - Crawl a documentation site (🔒 Protected)
   ```json
   {
     "url": "https://example.com/docs",
@@ -170,7 +192,7 @@ python test_rag_app.py
   }
   ```
 - **GET /job-status/{job_id}** - Check status of a crawl job
-- **POST /question** - Ask a question and get an answer
+- **POST /question** - Ask a question and get an answer (🔒 Protected)
   ```json
   {
     "question": "How do I use this API?",

@@ -21,6 +21,7 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OPENAI_MODEL=${OPENAI_MODEL:-gpt-3.5-turbo}
       - OPENAI_EMBEDDING_MODEL=${OPENAI_EMBEDDING_MODEL:-text-embedding-ada-002}
+      - AUTH_TOKEN=${AUTH_TOKEN}
       
       # Database Configuration
       - DATABASE_URL=sqlite:///./data/rag_database.db
