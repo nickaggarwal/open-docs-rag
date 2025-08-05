@@ -1,8 +1,10 @@
 import os
 import logging
+import json
 from typing import List, Dict, Any, Optional
-from fastapi import FastAPI, BackgroundTasks, HTTPException, Depends, Query
+from fastapi import FastAPI, BackgroundTasks, HTTPException, Depends, Query, Header
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 import asyncio
 import uvicorn
@@ -66,6 +68,43 @@ vector_store = FAISSVectorStore(index_path="./data/faiss_index/index")
 document_processor = DocumentProcessor()
 database = Database()
 
+# Authentication dependency
+async def verify_token(authorization: str = Header(None)):
+    """
+    Verify the authorization token if AUTH_TOKEN environment variable is set.
+    If AUTH_TOKEN is not set, authentication is skipped.
+    """
+    required_token = os.getenv("AUTH_TOKEN")
+    
+    # If no token is configured, skip authentication
+    if not required_token:
+        return True
+    
+    # Check if authorization header is provided
+    if not authorization:
+        raise HTTPException(
+            status_code=401,
+            detail="Authorization header is required"
+        )
+    
+    # Extract token from "Bearer <token>" format
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=401,
+            detail="Authorization header must be in format 'Bearer <token>'"
+        )
+    
+    token = authorization[7:]  # Remove "Bearer " prefix
+    
+    # Verify token
+    if token != required_token:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or expired token"
+        )
+    
+    return True
+
 # Pydantic models for request/response validation
 class CrawlRequest(BaseModel):
     url: str
@@ -116,7 +155,7 @@ async def root():
         "model": model,
         "endpoints": [
             "/crawl - Crawl a documentation site",
-            "/question - Ask a question",
+            "/question - Ask a question (streaming SSE response)",
             "/add-qa - Add a Q&A pair",
             "/job-status/{job_id} - Check job status",
             "/history - View Q&A history"
@@ -124,7 +163,7 @@ async def root():
     }
 
 @app.post("/crawl")
-async def start_crawl(req: CrawlRequest) -> Dict[str, Any]:
+async def start_crawl(req: CrawlRequest, _: bool = Depends(verify_token)) -> Dict[str, Any]:
     """
     Start a crawl job for a documentation site
     
@@ -230,35 +269,75 @@ async def get_job_status(job_id: str):
         **active_jobs[job_id]
     }
 
-@app.post("/question", response_model=QuestionResponse)
-async def ask_question(request: QuestionRequest):
+@app.post("/question")
+async def ask_question(request: QuestionRequest, _: bool = Depends(verify_token)):
     """
-    Ask a question and get an answer based on indexed documentation
+    Ask a question and get a streaming answer using Server-Sent Events (SSE)
     """
-    try:
-        # Search for relevant documents
-        relevant_docs = await vector_store.search(request.question, k=request.num_results)
-        
-        if not relevant_docs:
-            answer_data = {
-                "answer": "I don't have enough information to answer this question. Try crawling more documentation or asking a different question.",
-                "sources": []
-            }
-        else:
-            # Generate answer using LLM
-            answer_data = await llm_interface.generate_answer(request.question, relevant_docs)
-        
-        # Store Q&A in database
-        stored_data = await database.store_qa(request.question, answer_data)
-        
-        return {
-            "answer": answer_data["answer"],
-            "sources": answer_data["sources"],
-            "question_id": stored_data["question_id"]
+    async def generate_sse_stream():
+        try:
+            # Search for relevant documents
+            relevant_docs = await vector_store.search(request.question, k=request.num_results)
+            
+            if not relevant_docs:
+                # Send empty response for no documents
+                yield f"data: {json.dumps({'type': 'sources', 'content': []})}\n\n"
+                no_info_msg = "I don't have enough information to answer this question. Try crawling more documentation or asking a different question."
+                yield f"data: {json.dumps({'type': 'answer', 'content': no_info_msg})}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+            
+            # Generate streaming answer using LLM
+            full_answer = ""
+            sources = []
+            async for chunk in llm_interface.generate_answer_stream(request.question, relevant_docs):
+                if chunk.startswith("data: [DONE]"):
+                    # Store Q&A in database after streaming is complete
+                    if full_answer and sources:
+                        answer_data = {
+                            "answer": full_answer,
+                            "sources": sources
+                        }
+                        try:
+                            await database.store_qa(request.question, answer_data)
+                        except Exception as db_error:
+                            logger.error(f"Error storing Q&A in database: {str(db_error)}")
+                yield chunk
+                
+                # Parse chunk to extract data for database storage
+                if chunk.startswith("data: ") and not chunk.startswith("data: [DONE]"):
+                    try:
+                        chunk_data = chunk[6:].strip()  # Remove "data: " prefix
+                        if chunk_data and chunk_data != "[DONE]":
+                            parsed = json.loads(chunk_data)
+                            if parsed.get("type") == "answer_chunk":
+                                full_answer += parsed.get("content", "")
+                            elif parsed.get("type") == "sources":
+                                sources = parsed.get("content", [])
+                            elif parsed.get("type") == "answer":
+                                full_answer = parsed.get("content", "")
+                    except json.JSONDecodeError:
+                        pass  # Ignore parsing errors for now
+                        
+        except Exception as e:
+            logger.error(f"Error in streaming response: {str(e)}")
+            error_msg = f"Error processing question: {str(e)}"
+            yield f"data: {json.dumps({'type': 'error', 'content': error_msg})}\n\n"
+            yield "data: [DONE]\n\n"
+    
+    return StreamingResponse(
+        generate_sse_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache", 
+            "Connection": "keep-alive",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Headers": "*",
+            "X-Accel-Buffering": "no"  # Disable nginx buffering
         }
-    except Exception as e:
-        logger.error(f"Error answering question: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error processing question: {str(e)}")
+    )
+
+
 
 @app.post("/add-qa", response_model=QAPairResponse)
 async def add_qa_pair(request: QAPairRequest):
