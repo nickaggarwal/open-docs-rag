@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Simple Widget Example</title>
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        margin: 0;
+        padding: 40px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+        color: white;
+      }
+      .demo-content {
+        max-width: 600px;
+        margin: 0 auto;
+        text-align: center;
+        padding: 60px 20px;
+      }
+      h1 {
+        font-size: 3rem;
+        margin-bottom: 20px;
+        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+      }
+      p {
+        font-size: 1.2rem;
+        margin-bottom: 30px;
+        opacity: 0.9;
+      }
+      .feature-list {
+        background: rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(10px);
+        border-radius: 12px;
+        padding: 30px;
+        margin-top: 40px;
+        text-align: left;
+      }
+      .feature-list h3 {
+        margin-top: 0;
+        margin-bottom: 20px;
+      }
+      .feature-list ul {
+        list-style: none;
+        padding: 0;
+      }
+      .feature-list li {
+        padding: 8px 0;
+        padding-left: 24px;
+        position: relative;
+      }
+      .feature-list li:before {
+        content: '✅';
+        position: absolute;
+        left: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="demo-content">
+      <h1>🤖 AI Widget Demo</h1>
+      <p>This page demonstrates the Open Docs RAG Widget. Look for the chat button in the bottom-right corner!</p>
+
+      <div class="feature-list">
+        <h3>Widget Features:</h3>
+        <ul>
+          <li>Automatic CSS injection - no manual imports needed</li>
+          <li>Responsive design works on all devices</li>
+          <li>Modal popup with overlay background</li>
+          <li>Example questions to get started</li>
+          <li>Chat interface with mock API responses</li>
+          <li>Closes with ESC key or clicking outside</li>
+          <li>Customizable colors and branding</li>
+        </ul>
+      </div>
+    </div>
+
+    <script type="module">
+      import { createWidget } from './dist/index.esm.js';
+
+      // Create widget with simple configuration
+      const widget = createWidget({
+        websiteId: 'simple-demo',
+        projectName: 'Simple Demo',
+        projectColor: '#667eea',
+        projectLogo:
+          'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTEyIDJMMTMuMDkgOC4yNkwyMCA5TDEzLjA5IDE1Ljc0TDEyIDIyTDEwLjkxIDE1Ljc0TDQgOUwxMC45MSA4LjI2TDEyIDJaIiBmaWxsPSIjNjY3ZWVhIi8+Cjwvc3ZnPgo=',
+        modalExampleQuestions: 'What is this widget?, How do I use it?, Can I customize it?',
+        modalDisclaimer: 'This is a demo with mock responses. Connect to your real API for production use.',
+        apiEndpoint: 'http://100.28.126.254:8000/question',
+        modalTitle: 'AI Assistant'
+      });
+
+      console.log('Widget initialized successfully!');
+    </script>
+  </body>
+</html>

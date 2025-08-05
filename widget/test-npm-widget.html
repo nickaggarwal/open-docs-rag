@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Test NPM Widget</title>
+    <style>
+      body {
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        margin: 0;
+        padding: 20px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+        color: white;
+      }
+      .container {
+        max-width: 800px;
+        margin: 0 auto;
+        background: rgba(255, 255, 255, 0.1);
+        padding: 40px;
+        border-radius: 15px;
+        backdrop-filter: blur(10px);
+      }
+      h1 {
+        text-align: center;
+        margin-bottom: 30px;
+      }
+      .test-section {
+        background: rgba(255, 255, 255, 0.1);
+        padding: 20px;
+        border-radius: 10px;
+        margin: 20px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>🧪 NPM Widget Test</h1>
+
+      <div class="test-section">
+        <h3>Test 1: Widget Styling & Positioning</h3>
+        <p>The widget should appear in the <strong>bottom-right corner</strong> with:</p>
+        <ul>
+          <li>✅ Fixed dimensions: 120px × 48px</li>
+          <li>✅ White background with gray border</li>
+          <li>✅ Proper positioning (fixed, bottom-right)</li>
+        </ul>
+        <button onclick="checkPosition()">Check Widget Position & Styling</button>
+      </div>
+
+      <div class="test-section">
+        <h3>Test 2: Style Inheritance</h3>
+        <p>The widget should inherit the font family from this page: <strong>Segoe UI</strong></p>
+        <button onclick="checkFontInheritance()">Check Font Inheritance</button>
+      </div>
+
+      <div class="test-section">
+        <h3>Test 3: Manual Widget Control</h3>
+        <button onclick="openWidget()">Open Widget</button>
+        <button onclick="closeWidget()">Close Widget</button>
+      </div>
+
+      <div id="test-results" style="margin-top: 20px; padding: 20px; background: rgba(0, 0, 0, 0.2); border-radius: 10px">
+        <h4>Test Results:</h4>
+        <div id="results-content">Click test buttons to see results...</div>
+      </div>
+    </div>
+
+    <script type="module">
+      // Import the widget from the built npm package (CSS is now auto-injected)
+      import { createWidget } from './dist/index.esm.js';
+
+      console.log('Creating widget from NPM package...');
+
+      window.testWidget = createWidget({
+        websiteId: 'test-npm-widget',
+        projectName: 'NPM Test Widget',
+        projectColor: '#667eea',
+        projectLogo:
+          'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTEyIDJMMTMuMDkgOC4yNkwyMCA5TDEzLjA5IDE1Ljc0TDEyIDIyTDEwLjkxIDE1Ljc0TDQgOUwxMC45MSA4LjI2TDEyIDJaIiBmaWxsPSIjNjY3ZWVhIi8+Cjwvc3ZnPgo=',
+        modalExampleQuestions: 'How does this widget work?, Test question 2, Another test question',
+        modalDisclaimer: 'This is a test widget to verify NPM package functionality.',
+        apiEndpoint: '/api/test-chat'
+      });
+
+      console.log('Widget created successfully!');
+
+      // Test functions
+      window.checkPosition = function () {
+        const container = document.querySelector('.open-docs-rag-widget-container');
+        const results = document.getElementById('results-content');
+
+        if (!container) {
+          results.innerHTML = '❌ Widget container not found!';
+          return;
+        }
+
+        const styles = window.getComputedStyle(container);
+        const position = styles.position;
+        const bottom = styles.bottom;
+        const right = styles.right;
+        const zIndex = styles.zIndex;
+
+        const width = styles.width;
+        const height = styles.height;
+        const backgroundColor = styles.backgroundColor;
+
+        results.innerHTML = `
+        <strong>Widget Test Results:</strong><br>
+        Position: ${position} ${position === 'fixed' ? '✅' : '❌'}<br>
+        Bottom: ${bottom} ${bottom === '20px' ? '✅' : '❌'}<br>
+        Right: ${right} ${right === '20px' ? '✅' : '❌'}<br>
+        Z-Index: ${zIndex} ${zIndex >= '9999' ? '✅' : '❌'}<br>
+        Width: ${width} ${width === '120px' ? '✅' : '❌'}<br>
+        Height: ${height} ${height === '48px' ? '✅' : '❌'}<br>
+        Background: ${backgroundColor} ${backgroundColor.includes('255, 255, 255') || backgroundColor === 'white' ? '✅' : '❌'}
+      `;
+      };
+
+      window.checkFontInheritance = function () {
+        const container = document.querySelector('.open-docs-rag-widget-container');
+        const results = document.getElementById('results-content');
+
+        if (!container) {
+          results.innerHTML = '❌ Widget container not found!';
+          return;
+        }
+
+        const styles = window.getComputedStyle(container);
+        const fontFamily = styles.fontFamily;
+        const bodyFont = window.getComputedStyle(document.body).fontFamily;
+
+        results.innerHTML = `
+        <strong>Font Inheritance Test:</strong><br>
+        Widget Font: ${fontFamily}<br>
+        Body Font: ${bodyFont}<br>
+        Match: ${fontFamily === bodyFont ? '✅' : '❌'}
+      `;
+      };
+
+      window.openWidget = function () {
+        window.testWidget.open();
+      };
+
+      window.closeWidget = function () {
+        window.testWidget.close();
+      };
+    </script>
+  </body>
+</html>

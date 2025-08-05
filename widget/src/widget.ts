@@ -402,13 +402,14 @@ export class OpenDocsRAGWidget implements WidgetInstance {
       messagesContainer.appendChild(messageElement);
     }
 
-    // Update message content
+    // Update message content with real-time formatting
     const displayContent = content || '';
+    const formattedContent = this.formatMessageContent(displayContent, 'assistant');
     const typingIndicator = isStreaming ? '<span class="typing-indicator">●</span>' : '';
 
     messageElement.innerHTML = `
       <div class="open-docs-rag-widget-message-content">
-        ${displayContent}${typingIndicator}
+        ${formattedContent}${typingIndicator}
       </div>
       ${
         sources && sources.length > 0
@@ -435,7 +436,7 @@ export class OpenDocsRAGWidget implements WidgetInstance {
         (message) => `
       <div class="open-docs-rag-widget-message open-docs-rag-widget-message--${message.role}">
         <div class="open-docs-rag-widget-message-content">
-          ${message.content}
+          ${this.formatMessageContent(message.content, message.role)}
         </div>
         ${
           message.sources
@@ -454,6 +455,107 @@ export class OpenDocsRAGWidget implements WidgetInstance {
 
     // Scroll to bottom
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
+  }
+
+  private formatMessageContent(content: string, role: 'user' | 'assistant'): string {
+    // For user messages, just return the content as-is (no special formatting needed)
+    if (role === 'user') {
+      return content;
+    }
+
+    // For assistant messages, apply rich formatting
+    let formatted = content;
+
+    // Handle complete code blocks (```) - only format if complete
+    const codeBlockPlaceholders: string[] = [];
+    formatted = formatted.replace(/```(\w+)?\n?([\s\S]*?)```/g, (match, language, code) => {
+      const lang = language || '';
+      const placeholder = `__CODEBLOCK_${codeBlockPlaceholders.length}__`;
+      codeBlockPlaceholders.push(`<div class="code-block-container">
+        ${lang ? `<div class="code-block-language">${lang}</div>` : ''}
+        <pre class="code-block"><code>${this.escapeHtml(code.trim())}</code></pre>
+      </div>`);
+      return placeholder;
+    });
+
+    // Handle incomplete code blocks during streaming (show as pre)
+    formatted = formatted.replace(/```(\w+)?\n?([\s\S]*)$/g, (match, language, code) => {
+      // Only format if this is truly incomplete (no closing ```)
+      if (!content.includes('```' + (language || '') + '\n' + code + '```')) {
+        const lang = language || '';
+        return `<div class="code-block-container incomplete">
+          ${lang ? `<div class="code-block-language">${lang}</div>` : ''}
+          <pre class="code-block"><code>${this.escapeHtml(code)}</code></pre>
+        </div>`;
+      }
+      return match;
+    });
+
+    // Handle complete inline code (`) - only format if complete
+    const inlineCodePlaceholders: string[] = [];
+    formatted = formatted.replace(/`([^`]+)`/g, (match, code) => {
+      const placeholder = `__INLINECODE_${inlineCodePlaceholders.length}__`;
+      inlineCodePlaceholders.push(`<code class="inline-code">${this.escapeHtml(code)}</code>`);
+      return placeholder;
+    });
+
+    // Split into lines for better processing
+    const lines = formatted.split('\n');
+    const processedLines: string[] = [];
+
+    for (let i = 0; i < lines.length; i++) {
+      let line = lines[i];
+
+      // Handle bullet points (•)
+      if (line.trim().match(/^•\s+/)) {
+        line = line.replace(/^(\s*)•\s+(.+)$/, '$1<li class="bullet-item">$2</li>');
+      }
+      // Handle numbered lists (1. 2. 3. etc.)
+      else if (line.trim().match(/^\d+\.\s+/)) {
+        line = line.replace(/^(\s*)(\d+)\.\s+(.+)$/, '$1<li class="numbered-item">$3</li>');
+      }
+
+      processedLines.push(line);
+    }
+
+    formatted = processedLines.join('\n');
+
+    // Wrap consecutive bullet points in ul tags
+    formatted = formatted.replace(/(<li class="bullet-item">.*?<\/li>\n?)+/g, (match) => {
+      return `<ul class="bullet-list">${match}</ul>`;
+    });
+
+    // Wrap consecutive numbered items in ol tags
+    formatted = formatted.replace(/(<li class="numbered-item">.*?<\/li>\n?)+/g, (match) => {
+      return `<ol class="numbered-list">${match}</ol>`;
+    });
+
+    // Handle bold text (**text**)
+    formatted = formatted.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+
+    // Handle italic text (*text*) - but not if it's already in bold
+    formatted = formatted.replace(/(?<![\*])\*([^*]+)\*(?![\*])/g, '<em>$1</em>');
+
+    // Convert line breaks to <br> tags
+    formatted = formatted.replace(/\n/g, '<br>');
+
+    // Restore code blocks
+    codeBlockPlaceholders.forEach((code, index) => {
+      formatted = formatted.replace(`__CODEBLOCK_${index}__`, code);
+    });
+
+    // Restore inline code
+    inlineCodePlaceholders.forEach((code, index) => {
+      formatted = formatted.replace(`__INLINECODE_${index}__`, code);
+    });
+
+    return formatted;
+  }
+
+  private escapeHtml(text: string): string {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
   }
 
   private generateId(): string {
