@@ -43,8 +43,25 @@ export class OpenDocsRAGWidget implements WidgetInstance {
     // Inject complete widget styles
     const style = document.createElement('style');
     style.setAttribute('data-widget', 'open-docs-rag-widget');
-    style.textContent = `.open-docs-rag-widget-container{bottom:20px;font-family:inherit;position:fixed;right:20px;z-index:9999}.open-docs-rag-widget-button{align-items:center;background-color:#fff;border:2px solid #e9ecef;border-radius:50px;box-shadow:0 4px 12px rgba(0,0,0,.15);color:#495057;cursor:pointer;display:flex;font-family:inherit;font-weight:500;gap:8px;height:48px;justify-content:center;padding:0;transition:all .2s ease;width:120px}.open-docs-rag-widget-button:hover{background-color:#f8f9fa;border-color:#007bff;box-shadow:0 6px 20px rgba(0,123,255,.2);color:#007bff;transform:translateY(-2px)}.open-docs-rag-widget-button img{border-radius:4px}.open-docs-rag-widget-modal{align-items:center;display:flex;height:100%;justify-content:center;left:0;position:fixed;top:0;width:100%;z-index:10000}.open-docs-rag-widget-modal-overlay{background-color:rgba(0,0,0,.5);height:100%;left:0;position:absolute;top:0;width:100%}.open-docs-rag-widget-modal-content{background:#fff;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.3);display:flex;flex-direction:column;font-family:inherit;max-height:80vh;max-width:600px;overflow:hidden;position:relative;width:90%}.open-docs-rag-widget-modal-header{align-items:center;background-color:#f8f9fa;border-bottom:1px solid #e9ecef;display:flex;justify-content:space-between;padding:20px}.open-docs-rag-widget-modal-header-content{align-items:center;display:flex;gap:12px}.open-docs-rag-widget-modal-logo{border-radius:6px;height:32px;width:32px}.open-docs-rag-widget-modal-title{color:#212529;font-family:inherit;font-size:18px;font-weight:600;margin:0}.open-docs-rag-widget-modal-close{background:none;border:none;border-radius:4px;color:#6c757d;cursor:pointer;padding:4px;transition:all .2s ease}.open-docs-rag-widget-modal-close:hover{background-color:#e9ecef;color:#495057}.open-docs-rag-widget-modal-disclaimer{background-color:#f1fdd2;border-bottom:1px solid #e9ecef;color:#495057;font-family:inherit;font-size:14px;line-height:1.4;padding:12px 20px}.open-docs-rag-widget-chat-container,.open-docs-rag-widget-modal-body{display:flex;flex:1;flex-direction:column;overflow:hidden}.open-docs-rag-widget-chat-container{gap:16px;padding:20px}.open-docs-rag-widget-chat-messages{display:flex;flex:1;flex-direction:column;gap:16px;max-height:400px;overflow-y:auto;padding-right:4px}.open-docs-rag-widget-chat-messages::-webkit-scrollbar{width:6px}.open-docs-rag-widget-chat-messages::-webkit-scrollbar-track{background:#f1f3f4;border-radius:3px}.open-docs-rag-widget-chat-messages::-webkit-scrollbar-thumb{background:#c1c1c1;border-radius:3px}.open-docs-rag-widget-chat-messages::-webkit-scrollbar-thumb:hover{background:#a8a8a8}.open-docs-rag-widget-message{display:flex;flex-direction:column;gap:8px}.open-docs-rag-widget-message--user{align-items:flex-end}.open-docs-rag-widget-message--assistant{align-items:flex-start}.open-docs-rag-widget-message-content{word-wrap:break-word;border-radius:16px;font-family:inherit;line-height:1.4;max-width:80%;padding:12px 16px}.open-docs-rag-widget-message--user .open-docs-rag-widget-message-content{background-color:#007bff;border-bottom-right-radius:4px;color:#fff}.open-docs-rag-widget-message--assistant .open-docs-rag-widget-message-content{background-color:#f8f9fa;border:1px solid #e9ecef;border-bottom-left-radius:4px;color:#212529}.open-docs-rag-widget-message-sources{color:#6c757d;font-family:inherit;font-size:12px;margin-top:4px}.open-docs-rag-widget-message-sources a{color:#007bff;text-decoration:none}.open-docs-rag-widget-message-sources a:hover{text-decoration:underline}.typing-indicator{color:#007bff;animation:pulse 1.5s infinite;margin-left:4px}.open-docs-rag-widget-example-questions{margin-bottom:16px}.open-docs-rag-widget-example-questions-title{color:#495057;font-family:inherit;font-size:14px;font-weight:600;letter-spacing:.5px;margin:0 0 12px;text-transform:uppercase}.open-docs-rag-widget-example-questions-grid{display:flex;flex-direction:column;gap:8px}.open-docs-rag-widget-example-question-btn{background:#fff;border:1px solid #dee2e6;border-radius:8px;color:#495057;cursor:pointer;font-family:inherit;font-size:14px;line-height:1.4;padding:12px 16px;text-align:left;transition:all .2s ease}.open-docs-rag-widget-example-question-btn:hover{background-color:#f8f9fa;border-color:#adb5bd;box-shadow:0 2px 8px rgba(0,0,0,.1);transform:translateY(-1px)}.open-docs-rag-widget-input-container{align-items:center;background-color:#f8f9fa;border:1px solid #e9ecef;border-radius:8px;display:flex;gap:8px;padding:12px}.open-docs-rag-widget-input{background:none;border:none;color:#212529;flex:1;font-family:inherit;font-size:14px;outline:none;padding:8px 0}.open-docs-rag-widget-input::placeholder{color:#6c757d}.open-docs-rag-widget-send-button{align-items:center;background:none;border:none;border-radius:4px;color:#6c757d;cursor:pointer;display:flex;justify-content:center;padding:8px;transition:all .2s ease}.open-docs-rag-widget-send-button:hover{background-color:#e9ecef;color:#495057}.open-docs-rag-widget-send-button:disabled{cursor:not-allowed;opacity:.5}@media (max-width:768px){.open-docs-rag-widget-modal-content{margin:20px;max-height:90vh;width:95%}.open-docs-rag-widget-chat-messages{max-height:300px}.open-docs-rag-widget-chat-container,.open-docs-rag-widget-modal-header{padding:16px}}@keyframes fadeIn{0%{opacity:0;transform:scale(.95)}to{opacity:1;transform:scale(1)}}@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}.open-docs-rag-widget-modal{animation:fadeIn .2s ease-out}.open-docs-rag-widget-button:focus,.open-docs-rag-widget-example-question-btn:focus,.open-docs-rag-widget-modal-close:focus,.open-docs-rag-widget-send-button:focus{outline:2px solid #007bff;outline-offset:2px}.open-docs-rag-widget-input:focus{box-shadow:0 0 0 2px rgba(0,123,255,.25);outline:none}`;
+    style.textContent = `.open-docs-rag-widget-container{bottom:20px;font-family:inherit;position:fixed;right:20px;z-index:9999}.open-docs-rag-widget-button{align-items:center;background-color:#fff;border:2px solid #e9ecef;border-radius:50px;box-shadow:0 4px 12px rgba(0,0,0,.15);color:#495057;cursor:pointer;display:flex;font-family:inherit;font-weight:500;gap:8px;height:48px;justify-content:center;padding:0;transition:all .2s ease;width:120px}.open-docs-rag-widget-button:hover{background-color:#f8f9fa;border-color:#007bff;box-shadow:0 6px 20px rgba(0,123,255,.2);color:#007bff;transform:translateY(-2px)}.open-docs-rag-widget-button img{border-radius:4px}.open-docs-rag-widget-modal{align-items:center;display:flex;height:100%;justify-content:center;left:0;position:fixed;top:0;width:100%;z-index:10000}.open-docs-rag-widget-modal-overlay{background-color:rgba(0,0,0,.5);height:100%;left:0;position:absolute;top:0;width:100%}.open-docs-rag-widget-modal-content{background:#fff;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.3);display:flex;flex-direction:column;font-family:inherit;max-height:80vh;max-width:600px;overflow:hidden;position:relative;width:90%}.open-docs-rag-widget-modal-header{align-items:center;background-color:#f8f9fa;border-bottom:1px solid #e9ecef;display:flex;justify-content:space-between;padding:20px}.open-docs-rag-widget-modal-header-content{align-items:center;display:flex;gap:12px}.open-docs-rag-widget-modal-logo{border-radius:6px;height:32px;width:32px}.open-docs-rag-widget-modal-title{color:#212529;font-family:inherit;font-size:18px;font-weight:600;margin:0}.open-docs-rag-widget-modal-close{background:none;border:none;border-radius:4px;color:#6c757d;cursor:pointer;padding:4px;transition:all .2s ease}.open-docs-rag-widget-modal-close:hover{background-color:#e9ecef;color:#495057}.open-docs-rag-widget-modal-disclaimer{background-color:#f1fdd2;border-bottom:1px solid #e9ecef;color:#495057;font-family:inherit;font-size:14px;line-height:1.4;padding:12px 20px}.open-docs-rag-widget-chat-container,.open-docs-rag-widget-modal-body{display:flex;flex:1;flex-direction:column;overflow:hidden}.open-docs-rag-widget-chat-container{gap:16px;padding:20px}.open-docs-rag-widget-chat-messages{display:flex;flex:1;flex-direction:column;gap:16px;max-height:400px;overflow-y:auto;padding-right:4px}.open-docs-rag-widget-chat-messages::-webkit-scrollbar{width:6px}.open-docs-rag-widget-chat-messages::-webkit-scrollbar-track{background:#f1f3f4;border-radius:3px}.open-docs-rag-widget-chat-messages::-webkit-scrollbar-thumb{background:#c1c1c1;border-radius:3px}.open-docs-rag-widget-chat-messages::-webkit-scrollbar-thumb:hover{background:#a8a8a8}.open-docs-rag-widget-message{display:flex;flex-direction:column;gap:8px}.open-docs-rag-widget-message--user{align-items:flex-end}.open-docs-rag-widget-message--assistant{align-items:flex-start}.open-docs-rag-widget-message-content{word-wrap:break-word;border-radius:16px;font-family:inherit;line-height:1.4;max-width:80%;padding:12px 16px;font-size:12px!important}.open-docs-rag-widget-message--user .open-docs-rag-widget-message-content{background-color:#007bff;border-bottom-right-radius:4px;color:#fff}.open-docs-rag-widget-message--assistant .open-docs-rag-widget-message-content{background-color:#f8f9fa;border:1px solid #e9ecef;border-bottom-left-radius:4px;color:#212529}.open-docs-rag-widget-message-sources{color:#6c757d;font-family:inherit;font-size:12px;margin-top:4px}.open-docs-rag-widget-message-sources .sources-title{font-size:12px;font-weight:600;color:#495057;margin-bottom:6px;text-transform:uppercase;letter-spacing:.4px}.open-docs-rag-widget-message-sources .sources-list{display:flex;flex-wrap:wrap;gap:6px}.open-docs-rag-widget-message-sources .source-pill{display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid #dee2e6;border-radius:999px;padding:6px 10px;color:#495057;text-decoration:none;transition:all .15s ease;box-shadow:0 1px 2px rgba(0,0,0,.04)}.open-docs-rag-widget-message-sources .source-pill:hover{background:#f8f9fa;border-color:#adb5bd;transform:translateY(-1px);box-shadow:0 2px 6px rgba(0,0,0,.06)}.open-docs-rag-widget-message-sources .source-index{background:#1d4716;color:#fff;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;font-size:11px;font-weight:700}.open-docs-rag-widget-message-sources .source-host{font-weight:600}.open-docs-rag-widget-message-sources .source-sep{opacity:.5}.open-docs-rag-widget-message-sources .source-open-icon{opacity:.6}.typing-indicator{display:inline-flex;gap:4px;align-items:center;margin-left:6px}.typing-indicator .dot{width:6px;height:6px;background-color:#007bff;border-radius:50%;display:inline-block;animation:typing-bounce 1.2s infinite ease-in-out}.typing-indicator .dot:nth-child(2){animation-delay:0.15s}.typing-indicator .dot:nth-child(3){animation-delay:0.3s}@keyframes typing-bounce{0%,80%,100%{transform:scale(0.6);opacity:.4}40%{transform:scale(1);opacity:1}}.open-docs-rag-widget-example-questions{margin-bottom:16px}.open-docs-rag-widget-example-questions-title{color:#495057;font-family:inherit;font-size:14px;font-weight:600;letter-spacing:.5px;margin:0 0 12px;text-transform:uppercase}.open-docs-rag-widget-example-questions-grid{display:flex;flex-direction:column;gap:8px}.open-docs-rag-widget-example-question-btn{background:#fff;border:1px solid #dee2e6;border-radius:8px;color:#495057;cursor:pointer;font-family:inherit;font-size:14px;line-height:1.4;padding:12px 16px;text-align:left;transition:all .2s ease}.open-docs-rag-widget-example-question-btn:hover{background-color:#f8f9fa;border-color:#adb5bd;box-shadow:0 2px 8px rgba(0,0,0,.1);transform:translateY(-1px)}.open-docs-rag-widget-input-container{align-items:center;background-color:#f8f9fa;border:1px solid #e9ecef;border-radius:8px;display:flex;gap:8px;padding:0px 6px}.open-docs-rag-widget-input{background:none;border:none;color:#212529;flex:1;font-family:inherit;font-size:14px;outline:none;padding:8px 0}.open-docs-rag-widget-input::placeholder{color:#6c757d}.open-docs-rag-widget-send-button{align-items:center;background:none;border:none;border-radius:4px;color:#6c757d;cursor:pointer;display:flex;justify-content:center;padding:8px;transition:all .2s ease}.open-docs-rag-widget-send-button:hover{background-color:#e9ecef;color:#495057}.open-docs-rag-widget-send-button:disabled{cursor:not-allowed;opacity:.5}@media (max-width:768px){.open-docs-rag-widget-modal-content{margin:20px;max-height:90vh;width:95%}.open-docs-rag-widget-chat-messages{max-height:300px}.open-docs-rag-widget-chat-container,.open-docs-rag-widget-modal-header{padding:16px}}@keyframes fadeIn{0%{opacity:0;transform:scale(.95)}to{opacity:1;transform:scale(1)}}@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}.open-docs-rag-widget-modal{animation:fadeIn .2s ease-out}.open-docs-rag-widget-button:focus,.open-docs-rag-widget-example-question-btn:focus,.open-docs-rag-widget-modal-close:focus,.open-docs-rag-widget-send-button:focus{outline:2px solid #007bff;outline-offset:2px}.open-docs-rag-widget-input:focus{box-shadow: none;outline:none}.open-docs-rag-widget-message-content .code-block-container{margin:16px 0;border-radius:8px;overflow:hidden;background-color:#1a202c;border:2px solid #2d3748;box-shadow:0 4px 12px rgba(0,0,0,.15);position:relative}.open-docs-rag-widget-message-content .code-block{background-color:#1a202c;color:#e2e8f0;padding:12px;margin:0;font-family:Monaco,Menlo,Ubuntu Mono,monospace;font-size:12px;line-height:1.6;overflow-x:auto;white-space:pre;border-top:1px solid #2d3748}.open-docs-rag-widget-message-content .inline-code{background-color:#f1f3f4;color:#d73a49;padding:2px 6px;border-radius:4px;border:1px solid #e1e4e8;font-family:Monaco,Menlo,Ubuntu Mono,monospace;font-size:12px;font-weight:500}`;
     document.head.appendChild(style);
+
+    // Add explicit styling for code block language labels
+    const languageStyle = document.createElement('style');
+    languageStyle.setAttribute('data-widget', 'open-docs-rag-widget-language');
+    languageStyle.textContent = `
+      .open-docs-rag-widget-message-content .code-block-language{background-color:#2d3748;color:#a0aec0;padding:6px 10px;font-size:11px;font-weight:600;font-family:Monaco,Menlo,Ubuntu Mono,monospace;border-bottom:1px solid #4a5568;text-transform:uppercase;letter-spacing:.4px}
+    `;
+    document.head.appendChild(languageStyle);
+
+    // Make sources smaller: 10px font-size and tighter padding
+    const sourcesStyle = document.createElement('style');
+    sourcesStyle.setAttribute('data-widget', 'open-docs-rag-widget-sources');
+    sourcesStyle.textContent = `
+      .open-docs-rag-widget-message-sources .source-pill{font-size:10px!important;padding:2px 6px!important;border-radius:6px!important;gap:4px!important}
+      .open-docs-rag-widget-message-sources .sources-list{gap:4px!important}
+    `;
+    document.head.appendChild(sourcesStyle);
   }
 
   private createContainer(): HTMLElement {
@@ -349,15 +366,16 @@ export class OpenDocsRAGWidget implements WidgetInstance {
               const parsed = JSON.parse(data);
 
               if (parsed.type === 'sources') {
+                // capture sources but don't render them until complete
                 sources = parsed.content || [];
-                // Update message with sources immediately
+                // Update internal state only; keep rendering content without sources
                 this.updateMessageInArray(messageId, accumulatedContent, sources);
-                this.renderStreamingMessage(messageId, accumulatedContent, true, sources);
+                this.renderStreamingMessage(messageId, accumulatedContent, true);
               } else if (parsed.type === 'answer_chunk') {
                 accumulatedContent += parsed.content || '';
                 // Update message content with accumulated text
                 this.updateMessageInArray(messageId, accumulatedContent, sources);
-                this.renderStreamingMessage(messageId, accumulatedContent, true, sources);
+                this.renderStreamingMessage(messageId, accumulatedContent, true);
               }
             } catch (parseError) {
               console.warn('Failed to parse SSE data:', data, parseError);
@@ -405,22 +423,16 @@ export class OpenDocsRAGWidget implements WidgetInstance {
     // Update message content with real-time formatting
     const displayContent = content || '';
     const formattedContent = this.formatMessageContent(displayContent, 'assistant');
-    const typingIndicator = isStreaming ? '<span class="typing-indicator">●</span>' : '';
+    const typingIndicator = isStreaming
+      ? '<span class="typing-indicator" aria-label="Assistant is typing"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span>'
+      : '';
 
+    const sourcesHtml = !isStreaming ? this.getSourcesHtml(sources) : '';
     messageElement.innerHTML = `
       <div class="open-docs-rag-widget-message-content">
         ${formattedContent}${typingIndicator}
       </div>
-      ${
-        sources && sources.length > 0
-          ? `
-        <div class="open-docs-rag-widget-message-sources">
-          <small>Sources:</small>
-          ${sources.map((source) => `<a href="${source}" target="_blank">${source}</a>`).join(', ')}
-        </div>
-      `
-          : ''
-      }
+      ${sourcesHtml}
     `;
 
     // Scroll to bottom
@@ -438,16 +450,7 @@ export class OpenDocsRAGWidget implements WidgetInstance {
         <div class="open-docs-rag-widget-message-content">
           ${this.formatMessageContent(message.content, message.role)}
         </div>
-        ${
-          message.sources
-            ? `
-          <div class="open-docs-rag-widget-message-sources">
-            <small>Sources:</small>
-            ${message.sources.map((source) => `<a href="${source}" target="_blank">${source}</a>`).join(', ')}
-          </div>
-        `
-            : ''
-        }
+        ${this.getSourcesHtml(message.sources)}
       </div>
     `
       )
@@ -455,6 +458,44 @@ export class OpenDocsRAGWidget implements WidgetInstance {
 
     // Scroll to bottom
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
+  }
+
+  private getSourcesHtml(sources?: string[]): string {
+    if (!sources || sources.length === 0) return '';
+
+    const items = sources
+      .map((url, index) => {
+        let host = '';
+        let path = '';
+        try {
+          const u = new URL(url);
+          host = u.hostname.replace(/^www\./, '');
+          path = u.pathname + u.search + u.hash || '/';
+        } catch {
+          // Fallback for invalid URLs
+          host = 'link';
+          path = url;
+        }
+
+        // Trim very long paths for display
+        if (path.length > 60) {
+          path = path.slice(0, 57) + '…';
+        }
+
+        return `
+        <a class="source-pill" href="${url}" target="_blank" rel="noopener noreferrer">
+          <span class="source-host">${url}</span>
+        </a>
+      `;
+      })
+      .join('');
+
+    return `
+      <div class="open-docs-rag-widget-message-sources">
+        <div class="sources-title">Sources</div>
+        <div class="sources-list">${items}</div>
+      </div>
+    `;
   }
 
   private formatMessageContent(content: string, role: 'user' | 'assistant'): string {

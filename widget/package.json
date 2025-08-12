@@ -1,6 +1,6 @@
 {
   "name": "open-docs-rag-widget",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "description": "A customizable AI-powered documentation widget that can be easily integrated into any website or React application",
   "main": "dist/index.js",
   "module": "dist/index.esm.js",
