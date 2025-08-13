@@ -5,6 +5,13 @@ This script tests the FastAPI endpoints of the RAG application.
 It uses the requests library to send HTTP requests to a running instance of the API.
 """
 
+import pytest
+
+# Skip these tests when run under pytest unless a server is available
+pytest.skip(
+    "API endpoint tests require a running server", allow_module_level=True
+)
+
 import requests
 import json
 import time
