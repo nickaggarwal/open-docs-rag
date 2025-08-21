@@ -85,6 +85,7 @@ INSTRUCTIONS:
 - Include specific details, code examples, and step-by-step instructions when available
 - If the context doesn't contain enough information, clearly state what's missing and suggest related topics
 - Reference source sections when helpful for the user to find more details
+- IMPORTANT: Always format code blocks with triple backticks (```) at the start and end, and specify the language when possible (e.g., ```python, ```json, ```bash)
 
 ANSWER:"""
     
@@ -472,7 +473,7 @@ ANSWER:"""
             
             # Prepare request payload
             messages = [
-                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "system", "content": "You are a helpful AI documentation assistant. Always format code blocks with triple backticks (```) at the start and end, and specify the language when possible (e.g., ```python, ```json, ```bash)."},
                 {"role": "user", "content": prompt}
             ]
             
@@ -578,7 +579,7 @@ ANSWER:"""
             
             # Prepare request payload
             messages = [
-                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "system", "content": "You are a helpful AI documentation assistant. Always format code blocks with triple backticks (```) at the start and end, and specify the language when possible (e.g., ```python, ```json, ```bash)."},
                 {"role": "user", "content": prompt}
             ]
             

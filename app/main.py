@@ -10,6 +10,7 @@ import asyncio
 import uvicorn
 from dotenv import load_dotenv
 from .middleware.json_error_handler import JSONErrorHandlerMiddleware
+from .middleware.rate_limiter import RateLimiterMiddleware
 import uuid
 import urllib.parse
 
@@ -47,6 +48,9 @@ app.add_middleware(
     JSONErrorHandlerMiddleware,
     openai_api_key=os.getenv("OPENAI_API_KEY")
 )
+
+# Add rate limiter middleware
+app.add_middleware(RateLimiterMiddleware)
 
 # Create data directory if it doesn't exist
 os.makedirs("./data", exist_ok=True)
