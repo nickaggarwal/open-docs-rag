@@ -492,6 +492,8 @@ class FAISSVectorStore:
         Returns:
             List of document dictionaries with similarity scores
         """
+        logger.info(f"Starting search for query: '{query}' with k={k}")
+        
         # Load index if not already loaded
         self._load_index()
         
@@ -502,16 +504,25 @@ class FAISSVectorStore:
         if not self.documents:
             logger.warning("No documents in the index")
             return []
+        
+        logger.info(f"Index loaded with {len(self.documents)} documents")
             
         try:
             # Generate query embedding
+            logger.info("Generating query embedding...")
             query_embedding = await self.generate_embedding(query)
+            logger.info(f"Generated embedding with shape: {np.array(query_embedding).shape}")
             
             # Search the index - retrieve more results than needed for re-ranking
             retrieval_k = min(k * 3, len(self.documents))  # Retrieve 3x more for re-ranking
+            logger.info(f"Searching index for {retrieval_k} results...")
             distances, indices = self.index.search(
                 np.array([query_embedding], dtype=np.float32), k=retrieval_k
             )
+            
+            logger.info(f"FAISS search returned {len(indices[0])} indices")
+            logger.info(f"Distances: {distances[0][:5]}")  # Log first 5 distances
+            logger.info(f"Indices: {indices[0][:5]}")      # Log first 5 indices
             
             # First pass results
             initial_results = []
@@ -522,9 +533,13 @@ class FAISSVectorStore:
                     embedding_score = 1.0 / (1.0 + dist)
                     doc["embedding_score"] = float(embedding_score)
                     initial_results.append(doc)
+                    logger.info(f"Result {i+1}: idx={idx}, dist={dist:.4f}, score={embedding_score:.4f}")
+            
+            logger.info(f"Found {len(initial_results)} initial results")
             
             # If we have no results, return empty list
             if not initial_results:
+                logger.warning("No initial results found")
                 return []
                 
             # Re-rank results based on document structure
