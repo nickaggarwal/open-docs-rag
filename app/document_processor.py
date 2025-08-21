@@ -9,6 +9,7 @@ from bs4 import BeautifulSoup
 import markdown
 import html2text
 from .pattern_manager import PatternManager
+import urllib.parse
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -19,7 +20,8 @@ class DocumentProcessor:
                  chunk_overlap: int = 50,  # Smaller overlap for more distinct chunks
                  max_process_time: int = 120,
                  coarse_chunk_size: int = 1000,  # Size for top-level heading chunks
-                 fine_chunk_size: int = 400):    # Size for detailed chunks within sections
+                 fine_chunk_size: int = 400,    # Size for detailed chunks within sections
+                 concept_chunk_size: int = 2000):  # Larger chunks for concept documents
         """
         Initialize the document processor with configuration for hierarchical chunking
         
@@ -29,6 +31,7 @@ class DocumentProcessor:
             max_process_time: Maximum time in seconds to spend processing a single document
             coarse_chunk_size: Size for top-level heading chunks
             fine_chunk_size: Size for detailed chunks within sections
+            concept_chunk_size: Size for concept document chunks (larger to preserve context)
         """
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
@@ -36,13 +39,14 @@ class DocumentProcessor:
         self.max_chunk_time = 5
         self.coarse_chunk_size = coarse_chunk_size
         self.fine_chunk_size = fine_chunk_size
+        self.concept_chunk_size = concept_chunk_size  # New parameter for concept documents
         self.tokenizer = tiktoken.get_encoding("cl100k_base")  # OpenAI's tokenizer
         self.pattern_manager = PatternManager()
         self.initial_analysis_done = False
         
         logger.info(f"DocumentProcessor initialized with chunk_size={chunk_size}, "
                    f"chunk_overlap={chunk_overlap}, coarse_chunk_size={coarse_chunk_size}, "
-                   f"fine_chunk_size={fine_chunk_size}")
+                   f"fine_chunk_size={fine_chunk_size}, concept_chunk_size={concept_chunk_size}")
 
     def _count_tokens(self, text: str) -> int:
         """Count tokens in text using tiktoken"""
@@ -181,12 +185,14 @@ class DocumentProcessor:
             
         return sections
 
-    def _create_hierarchical_chunks(self, sections: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _create_hierarchical_chunks(self, sections: List[Dict[str, Any]], recommended_chunk_size: int, doc_classification: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
         Create hierarchical chunks from document sections
         
         Args:
             sections: List of document sections with headings and content
+            recommended_chunk_size: The recommended chunk size for the document
+            doc_classification: The document classification metadata
             
         Returns:
             List of chunks with metadata
@@ -198,7 +204,7 @@ class DocumentProcessor:
             section_text = '\n'.join(section["content"])
             section_tokens = self._count_tokens(section_text)
             
-            if section_tokens <= self.coarse_chunk_size:
+            if section_tokens <= recommended_chunk_size:
                 # Section fits in one chunk
                 chunks.append({
                     "text": section_text,
@@ -210,7 +216,7 @@ class DocumentProcessor:
                 })
             else:
                 # Split section into fine chunks
-                fine_chunks = self._create_fine_chunks(section_text)
+                fine_chunks = self._create_fine_chunks(section_text, recommended_chunk_size)
                 for i, chunk in enumerate(fine_chunks):
                     chunks.append({
                         "text": chunk,
@@ -224,16 +230,20 @@ class DocumentProcessor:
         
         return chunks
 
-    def _create_fine_chunks(self, text: str) -> List[str]:
+    def _create_fine_chunks(self, text: str, chunk_size: int = None) -> List[str]:
         """
         Create fine-grained chunks from text
         
         Args:
             text: Text to split into chunks
+            chunk_size: Maximum size for chunks (defaults to fine_chunk_size)
             
         Returns:
             List of text chunks
         """
+        if chunk_size is None:
+            chunk_size = self.fine_chunk_size
+            
         # Split by paragraphs first
         paragraphs = [p for p in text.split('\n\n') if p.strip()]
         chunks = []
@@ -241,7 +251,7 @@ class DocumentProcessor:
         
         for paragraph in paragraphs:
             # If adding this paragraph would exceed chunk size
-            if self._count_tokens(current_chunk + paragraph) > self.fine_chunk_size:
+            if self._count_tokens(current_chunk + paragraph) > chunk_size:
                 if current_chunk:
                     chunks.append(current_chunk)
                 current_chunk = paragraph
@@ -320,20 +330,31 @@ class DocumentProcessor:
             return []
             
         try:
+            # Classify the document to determine optimal chunking strategy
+            url = metadata.get("url", "")
+            doc_classification = self.classify_document_type(url, text)
+            
+            # Get recommended chunk size from classification
+            recommended_chunk_size = doc_classification.get("recommended_chunk_size", self.fine_chunk_size)
+            doc_type = doc_classification.get("document_type", "unknown")
+            
+            logger.info(f"Processing {doc_type} document with recommended chunk size: {recommended_chunk_size}")
+            
             # Preprocess document
             preprocessed_text = self._preprocess_document(text)
             
             # Extract structure
             sections = self._extract_structure(preprocessed_text)
             
-            # Create hierarchical chunks
-            chunks = self._create_hierarchical_chunks(sections)
+            # Create hierarchical chunks with document-specific parameters
+            chunks = self._create_hierarchical_chunks(sections, recommended_chunk_size, doc_classification)
             
             # Add metadata to chunks
             processed_chunks = []
             for i, chunk in enumerate(chunks):
                 chunk_metadata = metadata.copy()
                 chunk_metadata.update(chunk["metadata"])
+                chunk_metadata.update(doc_classification)  # Add classification info to chunk metadata
                 chunk_metadata["chunk_id"] = i
                 
                 processed_chunks.append({
@@ -392,3 +413,275 @@ class DocumentProcessor:
             })
         
         return processed_chunks
+
+    def classify_document_type(self, url: str, content: str) -> Dict[str, Any]:
+        """
+        Classify document type and priority based on URL structure and content
+        
+        Args:
+            url: Document URL
+            content: Document content
+            
+        Returns:
+            Classification metadata
+        """
+        parsed_url = urllib.parse.urlparse(url)
+        path_parts = [p for p in parsed_url.path.split('/') if p]
+        
+        # Document type classification
+        doc_type = "unknown"
+        priority = 3  # Default medium priority
+        complexity = "intermediate"
+        
+        if 'concepts' in path_parts:
+            doc_type = "concept"
+            priority = 1 if 'overview' in url or 'configuring' in url else 2
+            complexity = "beginner" if 'overview' in url else "intermediate"
+        elif 'how-to-guides' in path_parts or 'tutorial' in path_parts:
+            doc_type = "tutorial"
+            priority = 2
+            complexity = "intermediate"
+        elif 'api-reference' in path_parts or 'api' in path_parts:
+            doc_type = "api"
+            priority = 1  # High priority for API queries
+            complexity = "advanced"
+        elif 'quickstart' in path_parts or 'getting-started' in path_parts:
+            doc_type = "quickstart"
+            priority = 1  # High priority for beginners
+            complexity = "beginner"
+        elif 'cookbook' in path_parts or 'examples' in path_parts:
+            doc_type = "cookbook"
+            priority = 2
+            complexity = "intermediate"
+        
+        # Determine recommended chunk size based on document type
+        if doc_type == "concept":
+            recommended_chunk_size = self.concept_chunk_size  # Use larger chunks for concepts
+            # Special case for schema/configuration concepts - use even larger chunks
+            if 'configuring' in url or 'schema' in url or 'input-output' in url:
+                recommended_chunk_size = min(3000, self.concept_chunk_size * 1.5)
+        else:
+            recommended_chunk_size = self.fine_chunk_size  # Use standard fine chunks for others
+        
+        # Content analysis
+        has_code = bool(re.search(r'```|`[^`]+`', content))
+        has_config = bool(re.search(r'config|setup|install|deploy', content.lower()))
+        
+        # Topic hierarchy extraction
+        topic_hierarchy = []
+        if path_parts:
+            topic_hierarchy = [part.replace('-', ' ') for part in path_parts[1:]]  # Skip domain
+        
+        return {
+            "document_type": doc_type,
+            "priority_level": priority,
+            "complexity": complexity,
+            "recommended_chunk_size": recommended_chunk_size,
+            "has_code": has_code,
+            "has_config": has_config,
+            "topic_hierarchy": topic_hierarchy
+        }
+
+    def parse_markdown_structure(self, content: str) -> Dict[str, Any]:
+        """
+        Parse markdown structure to extract headings and sections
+        
+        Args:
+            content: Markdown content
+            
+        Returns:
+            Structured representation of the document
+        """
+        lines = content.split('\n')
+        structure = {
+            "title": "",
+            "sections": [],
+            "code_blocks": [],
+            "has_toc": False
+        }
+        
+        current_section = None
+        current_code_block = None
+        in_code_block = False
+        
+        for i, line in enumerate(lines):
+            # Extract title (first H1)
+            if line.startswith('# ') and not structure["title"]:
+                structure["title"] = line[2:].strip()
+                continue
+            
+            # Extract headings
+            heading_match = re.match(r'^(#+)\s+(.+)$', line)
+            if heading_match:
+                level = len(heading_match.group(1))
+                title = heading_match.group(2).strip()
+                
+                section = {
+                    "level": level,
+                    "title": title,
+                    "start_line": i,
+                    "content": "",
+                    "subsections": [],
+                    "has_code": False
+                }
+                
+                # Close previous section
+                if current_section:
+                    current_section["end_line"] = i - 1
+                    structure["sections"].append(current_section)
+                
+                current_section = section
+                continue
+            
+            # Track code blocks
+            if line.strip().startswith('```'):
+                if not in_code_block:
+                    # Starting code block
+                    language = line.strip()[3:].strip()
+                    current_code_block = {
+                        "language": language,
+                        "start_line": i,
+                        "content": ""
+                    }
+                    in_code_block = True
+                    if current_section:
+                        current_section["has_code"] = True
+                else:
+                    # Ending code block
+                    if current_code_block:
+                        current_code_block["end_line"] = i
+                        structure["code_blocks"].append(current_code_block)
+                    in_code_block = False
+                    current_code_block = None
+                continue
+            
+            # Add content to current section
+            if current_section:
+                current_section["content"] += line + '\n'
+            
+            # Add content to current code block
+            if in_code_block and current_code_block:
+                current_code_block["content"] += line + '\n'
+        
+        # Close final section
+        if current_section:
+            current_section["end_line"] = len(lines) - 1
+            structure["sections"].append(current_section)
+        
+        return structure
+
+    def create_enhanced_chunks(self, content: str, metadata: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Create enhanced chunks for MD documents with better context
+        
+        Args:
+            content: Document content
+            metadata: Document metadata
+            
+        Returns:
+            List of enhanced chunks
+        """
+        url = metadata.get("url", "")
+        
+        # Classify document
+        doc_classification = self.classify_document_type(url, content)
+        
+        # Parse structure
+        md_structure = self.parse_markdown_structure(content)
+        
+        chunks = []
+        
+        # 1. Document Summary Chunk
+        summary_content = f"Document: {md_structure.get('title', 'Unknown')}\n"
+        if md_structure.get('sections'):
+            summary_content += "Sections:\n"
+            for section in md_structure['sections'][:5]:  # First 5 sections
+                summary_content += f"- {section['title']}\n"
+        
+        summary_tokens = self._count_tokens(summary_content)
+        if summary_tokens <= 300:
+            chunks.append({
+                "text": summary_content,
+                "metadata": {
+                    **metadata,
+                    **doc_classification,
+                    "chunk_type": "document_summary",
+                    "priority": doc_classification["priority_level"],
+                    "md_structure": md_structure
+                }
+            })
+        
+        # 2. Section-Based Chunks
+        for section in md_structure.get('sections', []):
+            section_content = section.get('content', '').strip()
+            if not section_content:
+                continue
+            
+            section_tokens = self._count_tokens(section_content)
+            
+            # Create section header with context
+            section_header = f"# {section['title']}\n"
+            full_section_content = section_header + section_content
+            
+            if section_tokens <= self.coarse_chunk_size:
+                # Section fits in one chunk
+                chunks.append({
+                    "text": full_section_content,
+                    "metadata": {
+                        **metadata,
+                        **doc_classification,
+                        "chunk_type": "section",
+                        "heading": section['title'],
+                        "level": section['level'],
+                        "has_code": section.get('has_code', False),
+                        "priority": doc_classification["priority_level"]
+                    }
+                })
+            else:
+                # Split into subsection chunks
+                subsection_chunks = self._create_fine_chunks(section_content)
+                for i, chunk in enumerate(subsection_chunks):
+                    chunk_with_header = f"## {section['title']} (Part {i+1})\n{chunk}"
+                    chunks.append({
+                        "text": chunk_with_header,
+                        "metadata": {
+                            **metadata,
+                            **doc_classification,
+                            "chunk_type": "subsection",
+                            "heading": section['title'],
+                            "level": section['level'],
+                            "chunk_index": i,
+                            "has_code": section.get('has_code', False),
+                            "priority": doc_classification["priority_level"]
+                        }
+                    })
+        
+        # 3. Dedicated Code Example Chunks
+        for code_block in md_structure.get('code_blocks', []):
+            if not code_block.get('content', '').strip():
+                continue
+            
+            # Get surrounding context
+            lines = content.split('\n')
+            start = max(0, code_block['start_line'] - 3)
+            end = min(len(lines), code_block['end_line'] + 3)
+            
+            context_lines = lines[start:code_block['start_line']]
+            code_lines = lines[code_block['start_line']:code_block['end_line'] + 1]
+            after_lines = lines[code_block['end_line'] + 1:end]
+            
+            code_with_context = '\n'.join(context_lines + code_lines + after_lines)
+            
+            if self._count_tokens(code_with_context) <= 800:
+                chunks.append({
+                    "text": code_with_context,
+                    "metadata": {
+                        **metadata,
+                        **doc_classification,
+                        "chunk_type": "code_example",
+                        "language": code_block.get('language', 'unknown'),
+                        "priority": doc_classification["priority_level"] + 0.5  # Slightly lower than section
+                    }
+                })
+        
+        return chunks

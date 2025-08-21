@@ -337,6 +337,70 @@ async def ask_question(request: QuestionRequest, _: bool = Depends(verify_token)
         }
     )
 
+@app.post("/question_full", response_model=QuestionResponse)
+async def ask_question_full(request: QuestionRequest, _: bool = Depends(verify_token)):
+    """
+    Ask a question and get a complete static answer (non-streaming)
+    """
+    try:
+        logger.info(f"Processing question: {request.question}")
+        logger.info(f"Requesting {request.num_results} results")
+        
+        # Debug: Check vector store state
+        logger.info(f"Vector store has {len(vector_store.documents) if vector_store.documents else 0} documents")
+        logger.info(f"Vector store index exists: {vector_store.index is not None}")
+        
+        # Search for relevant documents
+        relevant_docs = await vector_store.search(request.question, k=request.num_results)
+        
+        logger.info(f"Found {len(relevant_docs)} relevant documents")
+        if relevant_docs:
+            for i, doc in enumerate(relevant_docs):
+                logger.info(f"Document {i+1}: score={doc.get('score', 'N/A')}, metadata={doc.get('metadata', {})}")
+        
+        if not relevant_docs:
+            no_info_msg = "I don't have enough information to answer this question. Try crawling more documentation or asking a different question."
+            logger.warning("No relevant documents found for the question")
+            return QuestionResponse(
+                answer=no_info_msg,
+                sources=[]
+            )
+        
+        # Generate static answer using LLM
+        logger.info("Generating answer using LLM interface")
+        result = await llm_interface.generate_answer(request.question, relevant_docs)
+        
+        logger.info(f"Generated answer with {len(result['sources'])} sources")
+        
+        # Store Q&A in database
+        if result["answer"] and result["sources"]:
+            try:
+                question_id = await database.store_qa(request.question, result)
+                return QuestionResponse(
+                    answer=result["answer"],
+                    sources=result["sources"],
+                    question_id=question_id
+                )
+            except Exception as db_error:
+                logger.error(f"Error storing Q&A in database: {str(db_error)}")
+                # Return response even if database storage fails
+                return QuestionResponse(
+                    answer=result["answer"],
+                    sources=result["sources"]
+                )
+        
+        return QuestionResponse(
+            answer=result["answer"],
+            sources=result["sources"]
+        )
+        
+    except Exception as e:
+        logger.error(f"Error in static response: {str(e)}")
+        error_msg = f"Error processing question: {str(e)}"
+        return QuestionResponse(
+            answer=error_msg,
+            sources=[]
+        )
 
 
 @app.post("/add-qa", response_model=QAPairResponse)
