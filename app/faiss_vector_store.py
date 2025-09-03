@@ -93,6 +93,17 @@ class FAISSVectorStore:
             if os.path.exists(index_file):
                 # Load FAISS index
                 self.index = faiss.read_index(index_file)
+                # Convert legacy L2 indexes to inner product with normalized vectors
+                if getattr(self.index, "metric_type", None) == faiss.METRIC_L2:
+                    logger.info("Converting L2 index to inner product for cosine similarity")
+                    vectors = []
+                    for i in range(self.index.ntotal):
+                        vectors.append(self.index.reconstruct(i))
+                    vectors = np.array(vectors, dtype=np.float32)
+                    faiss.normalize_L2(vectors)
+                    converted = faiss.IndexFlatIP(self.dimension)
+                    converted.add(vectors)
+                    self.index = converted
                 
                 # Load documents - prefer JSON over pickle
                 if os.path.exists(docs_file):
@@ -120,14 +131,14 @@ class FAISSVectorStore:
                 logger.info(f"Loaded existing index with {len(self.documents)} documents")
             else:
                 # Create new index
-                self.index = faiss.IndexFlatL2(self.dimension)
+                self.index = faiss.IndexFlatIP(self.dimension)
                 self.documents = []
                 self.id_map = {}
                 logger.info("Created new FAISS index")
         except Exception as e:
             # Create new index if loading fails
             logger.error(f"Error loading index: {str(e)}")
-            self.index = faiss.IndexFlatL2(self.dimension)
+            self.index = faiss.IndexFlatIP(self.dimension)
             self.documents = []
             self.id_map = {}
             logger.info("Created new FAISS index due to load error")
@@ -169,15 +180,13 @@ class FAISSVectorStore:
                     )
                     
                     part_embedding = np.array(response.data[0].embedding, dtype=np.float32)
+                    faiss.normalize_L2(part_embedding.reshape(1, -1))
                     embeddings.append(part_embedding)
                 
                 # Combine embeddings by averaging them
                 if embeddings:
                     combined_embedding = np.mean(embeddings, axis=0)
-                    # Normalize the combined embedding
-                    norm = np.linalg.norm(combined_embedding)
-                    if norm > 0:
-                        combined_embedding = combined_embedding / norm
+                    faiss.normalize_L2(combined_embedding.reshape(1, -1))
                     return combined_embedding
                 else:
                     # Fallback if something went wrong
@@ -189,7 +198,9 @@ class FAISSVectorStore:
                 input=text
             )
             
-            return np.array(response.data[0].embedding, dtype=np.float32)
+            embedding = np.array(response.data[0].embedding, dtype=np.float32)
+            faiss.normalize_L2(embedding.reshape(1, -1))
+            return embedding
         except Exception as e:
             logger.error(f"Error generating embedding: {str(e)}")
             # Return zero embedding as fallback
@@ -276,8 +287,11 @@ class FAISSVectorStore:
                             logger.info(f"{api_type} Embedding response received but couldn't log all details: {str(e)}")
                         
                         # Extract embeddings from response
-                        batch_embeddings = [np.array(data.embedding, dtype=np.float32) 
+                        batch_embeddings = [np.array(data.embedding, dtype=np.float32)
                                           for data in response.data]
+                        batch_array = np.stack(batch_embeddings)
+                        faiss.normalize_L2(batch_array)
+                        batch_embeddings = list(batch_array)
                         
                         # Update cache and store embeddings
                         for text, emb in zip(unique_texts, batch_embeddings):
@@ -529,8 +543,8 @@ class FAISSVectorStore:
             for i, (dist, idx) in enumerate(zip(distances[0], indices[0])):
                 if idx != -1:  # Valid result
                     doc = self.documents[idx].copy()
-                    # Convert distance to similarity score (lower distance = higher similarity)
-                    embedding_score = 1.0 / (1.0 + dist)
+                    # For cosine similarity indexes, distance is the similarity score
+                    embedding_score = float(dist)
                     doc["embedding_score"] = float(embedding_score)
                     initial_results.append(doc)
                     logger.info(f"Result {i+1}: idx={idx}, dist={dist:.4f}, score={embedding_score:.4f}")
@@ -639,7 +653,7 @@ class FAISSVectorStore:
         keep_ids = [doc_id for doc_id in all_ids if doc_id not in ids_to_remove]
         
         # Create new index and transfer data
-        new_index = faiss.IndexFlatL2(self.dimension)
+        new_index = faiss.IndexFlatIP(self.dimension)
         
         if keep_ids:
             # Build a list of vectors to retain
@@ -657,6 +671,7 @@ class FAISSVectorStore:
                 
             # Add vectors to new index
             keep_vectors = np.array(keep_vectors).astype('float32')
+            faiss.normalize_L2(keep_vectors)
             new_index.add(keep_vectors)
             
             # Update index and metadata
@@ -787,7 +802,7 @@ class FAISSVectorStore:
     
     def clear(self) -> None:
         """Clear the index and all documents"""
-        self.index = faiss.IndexFlatL2(self.dimension)
+        self.index = faiss.IndexFlatIP(self.dimension)
         self.documents = []
         self.id_map = {}
         logger.info("Cleared all documents from index")

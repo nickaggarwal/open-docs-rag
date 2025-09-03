@@ -9,6 +9,13 @@ This script tests the core functionality of the RAG application:
 5. Adding custom Q&A pairs
 """
 
+import pytest
+
+# Skip these tests by default when run under pytest
+pytest.skip(
+    "Integration tests require external services", allow_module_level=True
+)
+
 import os
 import sys
 import asyncio
